@@ -27,6 +27,51 @@ test('default scenario calculates roughly one kilometre of free-space coverage',
   assert.ok(Math.abs(baseline.result.coverageDistanceKm - 1.005) < 0.01)
 })
 
+test('default scenario calculates the protocol TBS with Table 2', () => {
+  const matrix = createScenarioMatrix({
+    scenarios: [{ id: 'baseline', name: '基准链路', inputs: { ...DEFAULT_SCENARIO_INPUTS } }],
+  })
+
+  const baseline = matrix.getScenario('baseline')
+
+  assert.ok(baseline)
+  assert.equal(baseline.inputs.mcsTable, 'pdsch-table-2')
+  assert.equal(baseline.result.transportBlockSizeBits, 3496)
+  assert.deepEqual(baseline.tbDiagnostics, [])
+})
+
+test('link-budget TBS restricts the MCS table to Table 1 or Table 2', () => {
+  const matrix = createScenarioMatrix({
+    scenarios: [{ id: 'baseline', name: '基准链路', inputs: { ...DEFAULT_SCENARIO_INPUTS } }],
+  })
+
+  const tableOne = matrix.updateInput('baseline', 'mcsTable', 'pdsch-table-1')
+  assert.ok(tableOne.result.transportBlockSizeBits !== null)
+  assert.equal(tableOne.tbDiagnostics.length, 0)
+
+  const tableThree = matrix.updateInput('baseline', 'mcsTable', 'pdsch-table-3')
+  assert.equal(tableThree.result.transportBlockSizeBits, null)
+  assert.deepEqual(tableThree.tbDiagnostics[0], {
+    code: 'UNSUPPORTED_MCS_TABLE',
+    field: 'mcsTable',
+    value: 'pdsch-table-3',
+    message: '链路预算只允许使用 MCS Table 1 或 Table 2',
+  })
+})
+
+test('invalid TBS input clears only the TBS result and reports its field', () => {
+  const matrix = createScenarioMatrix({
+    scenarios: [{ id: 'baseline', name: '基准链路', inputs: { ...DEFAULT_SCENARIO_INPUTS } }],
+  })
+
+  const updated = matrix.updateInput('baseline', 'nPrb', '0')
+
+  assert.equal(updated.result.transportBlockSizeBits, null)
+  assert.equal(updated.tbDiagnostics[0]?.code, 'INVALID_INPUT')
+  assert.equal(updated.tbDiagnostics[0]?.field, 'nPrb')
+  assert.ok(updated.result.coverageDistanceKm !== null)
+})
+
 test('missing path loss clears the previous result and reports the input field', () => {
   const matrix = createScenarioMatrix({
     scenarios: [{ id: 'baseline', name: '基准链路', inputs: { ...DEFAULT_SCENARIO_INPUTS } }],

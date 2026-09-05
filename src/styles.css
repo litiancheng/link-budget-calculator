@@ -768,6 +768,33 @@ a {
   font-size: 11px;
 }
 
+.budget-table-toolbar > span {
+  margin-right: auto;
+}
+
+.budget-table-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.budget-table-advanced-toggle {
+  padding: 6px 10px;
+  color: #3f6f62;
+  font: inherit;
+  background: #f1f8f4;
+  border: 1px solid #c6ded2;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.budget-table-advanced-toggle:hover,
+.budget-table-advanced-toggle[aria-expanded='true'] {
+  color: #245c4a;
+  background: #e5f2eb;
+  border-color: #a8cdbb;
+}
+
 .budget-table-copy {
   padding: 6px 10px;
   color: #50687c;

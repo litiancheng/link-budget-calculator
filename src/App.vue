@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import TabulatorBudgetTable from './components/TabulatorBudgetTable.vue'
+import { BUDGET_ROWS } from './domain/budgetMatrix'
 
 const scenarioCount = ref(4)
+const budgetParameterCount = BUDGET_ROWS.filter((row) => row.kind === 'input').length
 
 function formatScenarioCount(count: number) {
   return String(count).padStart(2, '0')
@@ -39,21 +41,21 @@ function formatScenarioCount(count: number) {
             <div>
               <p class="eyebrow">SCENARIO REVIEW / 02</p>
               <h1>链路预算参数表</h1>
-              <p class="report-intro">双击编辑场景名或场景值，或与 Excel 互相复制粘贴参数矩阵。</p>
+              <p class="report-intro">双击编辑场景名或场景值，或与 Excel 互相复制粘贴参数矩阵；NR TBS 高级参数可展开查看。</p>
             </div>
             <div class="report-header-meta">
               <span class="meta-label">原型状态</span>
-              <strong>FSPL</strong>
-              <span>自由空间覆盖计算</span>
+              <strong>FSPL + NR TBS</strong>
+              <span>覆盖距离与传输块大小</span>
             </div>
           </header>
 
           <div class="report-summary-row">
             <div class="report-summary-label">本页范围</div>
             <div class="report-summary-value"><strong>{{ formatScenarioCount(scenarioCount) }}</strong><span>场景</span></div>
-            <div class="report-summary-value"><strong>10</strong><span>参数项</span></div>
-            <div class="report-summary-value"><strong>dB / dBm</strong><span>主要单位</span></div>
-            <div class="report-summary-caption">结构固定，先观察参数编辑和 Excel 表格交换体验。</div>
+            <div class="report-summary-value"><strong>{{ budgetParameterCount }}</strong><span>参数项</span></div>
+            <div class="report-summary-value"><strong>dB / dBm / bits</strong><span>主要单位</span></div>
+            <div class="report-summary-caption">基础 NR TBS 参数默认展示；高级参数可展开，固定协议参数不进入编辑表。</div>
           </div>
 
           <section id="matrix" class="report-table-wrap">

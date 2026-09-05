@@ -32,6 +32,21 @@ test('budget rows keep units in the fixed parameter-name column and reserve a re
   assert.equal(budgetParameterLabel(coverage), '覆盖距离（km）')
 })
 
+test('TBS inputs separate always-visible basics from collapsible advanced rows', () => {
+  const basicRows = getBudgetRowsForScenarioCount(1, false)
+    .filter((row) => row.groupId === 'transport-block')
+    .map((row) => row.id)
+  const allRows = getBudgetRowsForScenarioCount(1, true)
+    .filter((row) => row.groupId === 'transport-block')
+    .map((row) => row.id)
+
+  assert.deepEqual(basicRows, ['tb-direction', 'tb-mcs-index', 'tb-layers', 'tb-prb', 'tb-symbols'])
+  assert.deepEqual(allRows, [...basicRows, 'tb-mcs-table', 'tb-dmrs-re'])
+
+  const collapsedGroup = getBudgetGroupsForScenarioCount(1, false).find((group) => group.id === 'transport-block')
+  assert.deepEqual(collapsedGroup?.rowIds, basicRows)
+})
+
 test('clipboard copy emits a predictable TSV without group labels', () => {
   const rows = [
     {
@@ -137,4 +152,22 @@ test('paste rejects malformed origin coordinates instead of accepting a no-op', 
 
   assert.equal(plan.accepted, false)
   assert.deepEqual(plan.updates, [])
+})
+
+test('paste follows the currently visible rows when advanced inputs are collapsed', () => {
+  const visibleRows = getBudgetRowsForScenarioCount(1, false)
+  const startRow = visibleRows.findIndex((row) => row.id === 'tb-symbols')
+
+  const plan = planBudgetClipboardPaste({
+    text: '12\n100.1',
+    startRow,
+    startColumn: 1,
+    scenarioIds: ['baseline'],
+    visibleRows,
+  })
+
+  assert.deepEqual(plan.updates, [
+    { scenarioId: 'baseline', field: 'nSymbols', value: '12' },
+    { scenarioId: 'baseline', field: 'pathLossModel', value: '100.1' },
+  ])
 })

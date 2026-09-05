@@ -1,6 +1,25 @@
+import {
+  calculateTransportBlockSize,
+  type McsTableId,
+  type TbsDiagnostic,
+  type TransportDirection,
+} from './transportBlockSize.ts'
+
 export const FREE_SPACE_PATH_LOSS_MODEL_ID = 'free-space'
 
 export const DEFAULT_SCENARIO_INPUTS = Object.freeze({
+  direction: 'downlink',
+  mcsTable: 'pdsch-table-2',
+  mcsIndex: '10',
+  numberOfLayers: '1',
+  nPrb: '10',
+  nSymbols: '12',
+  nDmrsPrb: '12',
+  nOhPrb: '0',
+  nPrbOutsideBwp: '0',
+  numberOfSlots: '1',
+  pi2Bpsk: 'false',
+  scalingFactor: '1',
   pathLossModel: FREE_SPACE_PATH_LOSS_MODEL_ID,
   carrierFrequencyGHz: '2.4',
   pathLossDb: '100.1',
@@ -68,8 +87,10 @@ export type ScenarioView = {
   inputs: Readonly<ScenarioInputs>
   result: {
     coverageDistanceKm: number | null
+    transportBlockSizeBits: number | null
   }
   diagnostics: readonly ModelDiagnostic[]
+  tbDiagnostics: readonly TbsDiagnostic[]
 }
 
 export type ScenarioMatrixSnapshot = {
@@ -91,6 +112,43 @@ function toInputString(value: RawInputValue) {
 
 function normalizeInputs(inputs: RawInputs = {}) {
   return Object.fromEntries(Object.entries(inputs).map(([key, value]) => [key, toInputString(value)]))
+}
+
+function readScenarioNumber(inputs: RawInputs, field: string) {
+  const text = toInputString(inputs[field]).trim()
+  return text ? Number(text) : Number.NaN
+}
+
+function calculateScenarioTransportBlockSize(inputs: ScenarioInputs) {
+  const mcsTable = inputs.mcsTable.trim() as McsTableId
+  if (mcsTable !== 'pdsch-table-1' && mcsTable !== 'pdsch-table-2') {
+    return {
+      value: null,
+      diagnostics: [
+        {
+          code: 'UNSUPPORTED_MCS_TABLE',
+          field: 'mcsTable',
+          value: inputs.mcsTable,
+          message: '链路预算只允许使用 MCS Table 1 或 Table 2',
+        },
+      ] satisfies TbsDiagnostic[],
+    }
+  }
+
+  return calculateTransportBlockSize({
+    direction: inputs.direction.trim() as TransportDirection,
+    mcsTable,
+    mcsIndex: readScenarioNumber(inputs, 'mcsIndex'),
+    numberOfLayers: readScenarioNumber(inputs, 'numberOfLayers'),
+    nPrb: readScenarioNumber(inputs, 'nPrb'),
+    nSymbols: readScenarioNumber(inputs, 'nSymbols'),
+    nDmrsPrb: readScenarioNumber(inputs, 'nDmrsPrb'),
+    nOhPrb: 0,
+    nPrbOutsideBwp: 0,
+    numberOfSlots: 1,
+    pi2Bpsk: false,
+    scalingFactor: 1,
+  })
 }
 
 function success(value: number): ModelResult {
@@ -238,7 +296,7 @@ export class ScenarioMatrix {
       this.scenarios.push({
         id: seed.id,
         name: seed.name,
-        inputs: normalizeInputs(seed.inputs ?? DEFAULT_SCENARIO_INPUTS),
+        inputs: normalizeInputs({ ...DEFAULT_SCENARIO_INPUTS, ...(seed.inputs ?? {}) }),
       })
       this.advanceScenarioNumber(seed.id)
     })
@@ -298,7 +356,7 @@ export class ScenarioMatrix {
     const scenario = {
       id,
       name: seed.name ?? '新场景',
-      inputs: normalizeInputs(seed.inputs ?? DEFAULT_SCENARIO_INPUTS),
+      inputs: normalizeInputs({ ...DEFAULT_SCENARIO_INPUTS, ...(seed.inputs ?? {}) }),
     }
     this.scenarios.push(scenario)
     this.advanceScenarioNumber(id)
@@ -328,13 +386,18 @@ export class ScenarioMatrix {
           field: 'pathLossModel',
           value: modelId,
         })
+    const tbsCalculation = calculateScenarioTransportBlockSize(scenario.inputs)
 
     return {
       id: scenario.id,
       name: scenario.name,
       inputs: { ...scenario.inputs },
-      result: { coverageDistanceKm: calculation.value },
+      result: {
+        coverageDistanceKm: calculation.value,
+        transportBlockSizeBits: tbsCalculation.value,
+      },
       diagnostics: [...calculation.diagnostics],
+      tbDiagnostics: [...tbsCalculation.diagnostics],
     }
   }
 

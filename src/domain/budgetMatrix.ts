@@ -1,4 +1,5 @@
 export type BudgetRowKind = 'input' | 'result'
+export type BudgetRowVisibility = 'basic' | 'advanced'
 
 export type BudgetRowDefinition = {
   id: string
@@ -8,6 +9,7 @@ export type BudgetRowDefinition = {
   field?: string
   editor: 'text' | 'select' | 'readonly'
   groupId: string
+  visibility?: BudgetRowVisibility
 }
 
 export type BudgetGroupDefinition = {
@@ -17,6 +19,76 @@ export type BudgetGroupDefinition = {
 }
 
 export const BUDGET_ROWS: readonly BudgetRowDefinition[] = Object.freeze([
+  {
+    id: 'tb-direction',
+    parameter: '传输方向',
+    unit: '',
+    kind: 'input',
+    field: 'direction',
+    editor: 'select',
+    groupId: 'transport-block',
+    visibility: 'basic',
+  },
+  {
+    id: 'tb-mcs-index',
+    parameter: 'MCS 索引',
+    unit: '',
+    kind: 'input',
+    field: 'mcsIndex',
+    editor: 'text',
+    groupId: 'transport-block',
+    visibility: 'basic',
+  },
+  {
+    id: 'tb-layers',
+    parameter: '传输层数',
+    unit: '',
+    kind: 'input',
+    field: 'numberOfLayers',
+    editor: 'text',
+    groupId: 'transport-block',
+    visibility: 'basic',
+  },
+  {
+    id: 'tb-prb',
+    parameter: '分配 PRB 数',
+    unit: '',
+    kind: 'input',
+    field: 'nPrb',
+    editor: 'text',
+    groupId: 'transport-block',
+    visibility: 'basic',
+  },
+  {
+    id: 'tb-symbols',
+    parameter: '调度符号数',
+    unit: '',
+    kind: 'input',
+    field: 'nSymbols',
+    editor: 'text',
+    groupId: 'transport-block',
+    visibility: 'basic',
+  },
+  {
+    id: 'tb-mcs-table',
+    parameter: 'MCS 表',
+    unit: '',
+    kind: 'input',
+    field: 'mcsTable',
+    editor: 'select',
+    groupId: 'transport-block',
+    visibility: 'advanced',
+  },
+  {
+    id: 'tb-dmrs-re',
+    parameter: '每 PRB DM-RS RE 数',
+    unit: 'RE',
+    kind: 'input',
+    field: 'nDmrsPrb',
+    editor: 'text',
+    groupId: 'transport-block',
+    visibility: 'advanced',
+  },
   {
     id: 'path-loss-model',
     parameter: '路损模型',
@@ -106,9 +178,22 @@ export const BUDGET_ROWS: readonly BudgetRowDefinition[] = Object.freeze([
     editor: 'readonly',
     groupId: 'results',
   },
+  {
+    id: 'transport-block-size',
+    parameter: '传输块大小',
+    unit: 'bits',
+    kind: 'result',
+    editor: 'readonly',
+    groupId: 'results',
+  },
 ])
 
 export const BUDGET_GROUPS: readonly BudgetGroupDefinition[] = Object.freeze([
+  {
+    id: 'transport-block',
+    label: '传输块参数',
+    rowIds: ['tb-direction', 'tb-mcs-index', 'tb-layers', 'tb-prb', 'tb-symbols', 'tb-mcs-table', 'tb-dmrs-re'],
+  },
   {
     id: 'transmitter',
     label: '发射端参数',
@@ -127,16 +212,31 @@ export const BUDGET_GROUPS: readonly BudgetGroupDefinition[] = Object.freeze([
   {
     id: 'results',
     label: '计算结果',
-    rowIds: ['coverage-distance'],
+    rowIds: ['coverage-distance', 'transport-block-size'],
   },
 ])
 
-export function getBudgetRowsForScenarioCount(scenarioCount: number): readonly BudgetRowDefinition[] {
-  return scenarioCount > 0 ? BUDGET_ROWS : BUDGET_ROWS.filter((row) => row.kind !== 'result')
+export function getBudgetRowsForScenarioCount(
+  scenarioCount: number,
+  showAdvancedInputs = true,
+): readonly BudgetRowDefinition[] {
+  const rows = scenarioCount > 0 ? BUDGET_ROWS : BUDGET_ROWS.filter((row) => row.kind !== 'result')
+  return showAdvancedInputs ? rows : rows.filter((row) => row.visibility !== 'advanced')
 }
 
-export function getBudgetGroupsForScenarioCount(scenarioCount: number): readonly BudgetGroupDefinition[] {
-  return scenarioCount > 0 ? BUDGET_GROUPS : BUDGET_GROUPS.filter((group) => group.id !== 'results')
+export function getBudgetGroupsForScenarioCount(
+  scenarioCount: number,
+  showAdvancedInputs = true,
+): readonly BudgetGroupDefinition[] {
+  const visibleRowIds = new Set(getBudgetRowsForScenarioCount(scenarioCount, showAdvancedInputs).map((row) => row.id))
+  const groups = scenarioCount > 0 ? BUDGET_GROUPS : BUDGET_GROUPS.filter((group) => group.id !== 'results')
+
+  return groups
+    .map((group) => ({
+      ...group,
+      rowIds: group.rowIds.filter((rowId) => visibleRowIds.has(rowId)),
+    }))
+    .filter((group) => group.rowIds.length > 0)
 }
 
 export type BudgetClipboardColumn =
@@ -217,14 +317,16 @@ export function planBudgetClipboardPaste({
   startRow,
   startColumn,
   scenarioIds,
+  visibleRows = BUDGET_ROWS,
 }: {
   text: string
   startRow: number
   startColumn: number
   scenarioIds: readonly string[]
+  visibleRows?: readonly BudgetRowDefinition[]
 }): BudgetPastePlan {
   const matrix = parseBudgetClipboard(text)
-  const startDefinition = BUDGET_ROWS[startRow]
+  const startDefinition = visibleRows[startRow]
 
   if (
     matrix.length === 0 ||
@@ -250,7 +352,7 @@ export function planBudgetClipboardPaste({
   let ignoredOutOfRangeCells = 0
 
   matrix.forEach((sourceRow, rowOffset) => {
-    const rowDefinition = BUDGET_ROWS[startRow + rowOffset]
+    const rowDefinition = visibleRows[startRow + rowOffset]
 
     sourceRow.forEach((value, columnOffset) => {
       const scenarioId = scenarioIds[startColumn - 1 + columnOffset]

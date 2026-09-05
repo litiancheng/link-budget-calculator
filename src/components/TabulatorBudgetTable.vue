@@ -16,6 +16,7 @@ import {
   serializeBudgetClipboard,
   type BudgetRowDefinition,
 } from '../domain/budgetMatrix'
+import type { TbsDiagnostic } from '../domain/transportBlockSize'
 
 type BudgetTableRow = {
   id: string
@@ -89,6 +90,7 @@ const scenarioMatrix = createScenarioMatrix({
 })
 
 const scenarioViews = ref<ScenarioView[]>([])
+const showAdvancedInputs = ref(false)
 let rows: BudgetTableRow[] = []
 
 const diagnosticFieldLabels: Record<string, string> = {
@@ -96,6 +98,23 @@ const diagnosticFieldLabels: Record<string, string> = {
   carrierFrequencyGHz: '载波频率',
   pathLossDb: '路损值',
   distanceKm: '传播距离',
+  direction: '传输方向',
+  mcsIndex: 'MCS 索引',
+  numberOfLayers: '传输层数',
+  nPrb: '分配 PRB 数',
+  nSymbols: '调度符号数',
+  mcsTable: 'MCS 表',
+  nDmrsPrb: '每 PRB DM-RS RE 数',
+}
+
+const tbsDiagnosticFieldLabels: Record<string, string> = {
+  direction: '传输方向',
+  mcsTable: 'MCS 表',
+  mcsIndex: 'MCS 索引',
+  numberOfLayers: '传输层数',
+  nPrb: '分配 PRB 数',
+  nSymbols: '调度符号数',
+  nDmrsPrb: '每 PRB DM-RS RE 数',
 }
 
 function escapeHtml(value: unknown) {
@@ -116,7 +135,25 @@ function diagnosticMessage(diagnostic: ModelDiagnostic) {
   return '当前输入无法计算'
 }
 
-function scenarioResultValue(view: ScenarioView) {
+function tbsDiagnosticMessage(diagnostic: TbsDiagnostic) {
+  const label = tbsDiagnosticFieldLabels[diagnostic.field] ?? 'TBS 输入值'
+  if (diagnostic.message) return diagnostic.message
+  if (diagnostic.code === 'RESERVED_MCS_INDEX') return label + '在所选 MCS 表中为保留值'
+  if (diagnostic.code === 'UNSUPPORTED_MCS_TABLE') return '链路预算只允许使用 MCS Table 1 或 Table 2'
+  if (diagnostic.code === 'INVALID_INPUT') return label + '输入无效'
+  return '当前 TBS 无法计算'
+}
+
+function scenarioResultValue(view: ScenarioView, definition: BudgetRowDefinition) {
+  if (definition.id === 'transport-block-size') {
+    if (view.result.transportBlockSizeBits !== null) {
+      return String(view.result.transportBlockSizeBits)
+    }
+
+    const diagnostic = view.tbDiagnostics[0]
+    return diagnostic ? tbsDiagnosticMessage(diagnostic) : ''
+  }
+
   if (view.result.coverageDistanceKm !== null) {
     return view.result.coverageDistanceKm.toFixed(2)
   }
@@ -130,7 +167,7 @@ function scenarioInputValue(view: ScenarioView, definition: BudgetRowDefinition)
 }
 
 function projectRows(views: readonly ScenarioView[]) {
-  return getBudgetRowsForScenarioCount(views.length).map((definition): BudgetTableRow => {
+  return getBudgetRowsForScenarioCount(views.length, showAdvancedInputs.value).map((definition): BudgetTableRow => {
     const row: BudgetTableRow = {
       id: definition.id,
       rowType: definition.kind,
@@ -139,7 +176,9 @@ function projectRows(views: readonly ScenarioView[]) {
 
     views.forEach((view) => {
       row[view.id] =
-        definition.kind === 'result' ? scenarioResultValue(view) : scenarioInputValue(view, definition)
+        definition.kind === 'result'
+          ? scenarioResultValue(view, definition)
+          : scenarioInputValue(view, definition)
     })
 
     return row
@@ -158,13 +197,44 @@ function viewForScenario(id: string) {
 }
 
 function hasDiagnostic(scenarioId: string, field: string) {
-  return viewForScenario(scenarioId)?.diagnostics.some((diagnostic) => diagnostic.field === field) ?? false
+  const view = viewForScenario(scenarioId)
+  return (
+    view?.diagnostics.some((diagnostic) => diagnostic.field === field) ||
+    view?.tbDiagnostics.some((diagnostic) => diagnostic.field === field) ||
+    false
+  )
+}
+
+function scenarioResultIsValid(view: ScenarioView, definition: BudgetRowDefinition) {
+  return definition.id === 'transport-block-size'
+    ? view.result.transportBlockSizeBits !== null
+    : view.result.coverageDistanceKm !== null
 }
 
 function modelLabel(value: unknown) {
   const model = scenarioMatrix.listPathLossModels().find((item) => item.id === value)
   return model?.label ?? String(value ?? '')
 }
+
+function tbsInputLabel(definition: BudgetRowDefinition, value: unknown) {
+  const rawValue = String(value ?? '')
+  if (definition.id === 'tb-direction') {
+    return {
+      downlink: '下行（DL-SCH / PDSCH）',
+      uplink: '上行（UL-SCH / PUSCH）',
+    }[rawValue] ?? rawValue
+  }
+
+  if (definition.id === 'tb-mcs-table') {
+    return {
+      'pdsch-table-1': 'Table 1',
+      'pdsch-table-2': 'Table 2',
+    }[rawValue] ?? rawValue
+  }
+
+  return rawValue
+}
+
 function budgetRowForCell(data: BudgetTableRow) {
   return BUDGET_ROWS.find((row) => row.id === data.id)
 }
@@ -185,7 +255,8 @@ function valueFormatter(cell: any) {
   if (definition.kind === 'result') {
     const resultValue = String(value ?? '')
     if (!resultValue) return '<span class="table-value table-value--error">暂无结果</span>'
-    if (viewForScenario(scenarioId)?.result.coverageDistanceKm === null) {
+    const scenario = viewForScenario(scenarioId)
+    if (!scenario || !scenarioResultIsValid(scenario, definition)) {
       return '<span class="table-value table-value--error">' + escapeHtml(resultValue) + '</span>'
     }
     return '<span class="table-value table-value--result">' + escapeHtml(resultValue) + '</span>'
@@ -195,7 +266,7 @@ function valueFormatter(cell: any) {
     return '<span class="table-value">' + escapeHtml(modelLabel(value)) + '</span>'
   }
 
-  return '<span class="table-value">' + escapeHtml(value == null ? '' : String(value)) + '</span>'
+  return '<span class="table-value">' + escapeHtml(tbsInputLabel(definition, value)) + '</span>'
 }
 
 function isScenarioField(field: string) {
@@ -226,15 +297,33 @@ function budgetEditor(
   editor.value = currentValue
 
   if (editor instanceof HTMLSelectElement) {
-    scenarioMatrix.listPathLossModels().forEach((model) => {
+    const options = definition?.id === 'path-loss-model'
+      ? scenarioMatrix.listPathLossModels().map((model) => ({ value: model.id, label: model.label }))
+      : definition?.id === 'tb-direction'
+        ? [
+            { value: 'downlink', label: '下行（DL-SCH / PDSCH）' },
+            { value: 'uplink', label: '上行（UL-SCH / PUSCH）' },
+          ]
+        : definition?.id === 'tb-mcs-table'
+          ? [
+              { value: 'pdsch-table-1', label: 'Table 1' },
+              { value: 'pdsch-table-2', label: 'Table 2' },
+            ]
+          : []
+
+    options.forEach((item) => {
       const option = document.createElement('option')
-      option.value = model.id
-      option.textContent = model.label
-      option.selected = model.id === currentValue
+      option.value = item.value
+      option.textContent = item.label
+      option.selected = item.value === currentValue
       editor.appendChild(option)
     })
 
-    if (currentValue && !scenarioMatrix.listPathLossModels().some((model) => model.id === currentValue)) {
+    if (
+      definition?.id === 'path-loss-model' &&
+      currentValue &&
+      !options.some((option) => option.value === currentValue)
+    ) {
       const option = document.createElement('option')
       option.value = currentValue
       option.textContent = currentValue
@@ -249,6 +338,18 @@ function budgetEditor(
     finished = true
     if (commit) success(editor.value)
     else cancel()
+  }
+
+  const openSelectPicker = (select: HTMLSelectElement) => {
+    const picker = (select as HTMLSelectElement & { showPicker?: () => void }).showPicker
+    try {
+      if (typeof picker === 'function') picker.call(select)
+      else select.click()
+    } catch {
+      // Some browsers require a transient user activation; keeping focus is
+      // still a usable fallback because the user can open the native picker.
+      select.focus()
+    }
   }
 
   editor.addEventListener('blur', () => finish(true))
@@ -272,6 +373,7 @@ function budgetEditor(
   onRendered(() => {
     editor.focus()
     if (editor instanceof HTMLInputElement) editor.select()
+    if (editor instanceof HTMLSelectElement) openSelectPicker(editor)
   })
 
   return editor
@@ -405,6 +507,12 @@ function rebuildTable() {
   if (!tableElement.value) return
   destroyTable()
   initTable()
+}
+
+function toggleAdvancedInputs() {
+  showAdvancedInputs.value = !showAdvancedInputs.value
+  rows = projectRows(scenarioViews.value)
+  rebuildTable()
 }
 
 function addScenario() {
@@ -581,6 +689,7 @@ function pasteIntoTable(text: string) {
     startRow,
     startColumn,
     scenarioIds: scenarioViews.value.map((view) => view.id),
+    visibleRows: getBudgetRowsForScenarioCount(scenarioViews.value.length, showAdvancedInputs.value),
   })
 
   if (!plan.accepted) return
@@ -635,14 +744,24 @@ onBeforeUnmount(destroyTable)
   <div class="budget-table-shell">
     <div class="budget-table-toolbar">
       <span>双击编辑场景名或数值；点击标题旁 × 删除场景；拖选单元格复制数据</span>
-      <button type="button" class="budget-table-copy" @click="copyToExcel">复制到 Excel</button>
+      <div class="budget-table-actions">
+        <button
+          type="button"
+          class="budget-table-advanced-toggle"
+          :aria-expanded="showAdvancedInputs"
+          @click="toggleAdvancedInputs"
+        >
+          {{ showAdvancedInputs ? '收起高级参数' : '展开高级参数' }}
+        </button>
+        <button type="button" class="budget-table-copy" @click="copyToExcel">复制到 Excel</button>
+      </div>
     </div>
 
     <div class="budget-matrix-layout">
       <aside class="budget-group-panel" aria-label="参数分组">
         <div class="budget-group-panel-spacer" aria-hidden="true" />
         <div
-          v-for="group in getBudgetGroupsForScenarioCount(scenarioViews.length)"
+          v-for="group in getBudgetGroupsForScenarioCount(scenarioViews.length, showAdvancedInputs)"
           :key="group.id"
           class="budget-group"
           :class="'budget-group--' + group.id"

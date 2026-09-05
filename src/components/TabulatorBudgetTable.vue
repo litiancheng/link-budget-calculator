@@ -8,9 +8,10 @@ import {
   type ScenarioView,
 } from '../domain/scenarioMatrix'
 import {
-  BUDGET_GROUPS,
   BUDGET_ROWS,
   budgetParameterLabel,
+  getBudgetGroupsForScenarioCount,
+  getBudgetRowsForScenarioCount,
   planBudgetClipboardPaste,
   serializeBudgetClipboard,
   type BudgetRowDefinition,
@@ -129,7 +130,7 @@ function scenarioInputValue(view: ScenarioView, definition: BudgetRowDefinition)
 }
 
 function projectRows(views: readonly ScenarioView[]) {
-  return BUDGET_ROWS.map((definition): BudgetTableRow => {
+  return getBudgetRowsForScenarioCount(views.length).map((definition): BudgetTableRow => {
     const row: BudgetTableRow = {
       id: definition.id,
       rowType: definition.kind,
@@ -641,7 +642,7 @@ onBeforeUnmount(destroyTable)
       <aside class="budget-group-panel" aria-label="参数分组">
         <div class="budget-group-panel-spacer" aria-hidden="true" />
         <div
-          v-for="group in BUDGET_GROUPS"
+          v-for="group in getBudgetGroupsForScenarioCount(scenarioViews.length)"
           :key="group.id"
           class="budget-group"
           :class="'budget-group--' + group.id"

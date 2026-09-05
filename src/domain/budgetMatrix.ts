@@ -131,6 +131,14 @@ export const BUDGET_GROUPS: readonly BudgetGroupDefinition[] = Object.freeze([
   },
 ])
 
+export function getBudgetRowsForScenarioCount(scenarioCount: number): readonly BudgetRowDefinition[] {
+  return scenarioCount > 0 ? BUDGET_ROWS : BUDGET_ROWS.filter((row) => row.kind !== 'result')
+}
+
+export function getBudgetGroupsForScenarioCount(scenarioCount: number): readonly BudgetGroupDefinition[] {
+  return scenarioCount > 0 ? BUDGET_GROUPS : BUDGET_GROUPS.filter((group) => group.id !== 'results')
+}
+
 export type BudgetClipboardColumn =
   | { id: 'parameter'; kind: 'parameter'; title: string }
   | { id: string; kind: 'scenario'; title: string }

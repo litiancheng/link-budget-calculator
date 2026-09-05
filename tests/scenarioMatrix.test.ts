@@ -135,6 +135,44 @@ test('scenario lifecycle keeps stable ids and independent default inputs', () =>
   assert.equal(matrix.getSnapshot().scenarios.length, 1)
 })
 
+test('removing a middle scenario preserves the remaining order, ids, inputs, and results', () => {
+  const matrix = createScenarioMatrix({
+    scenarios: [
+      { id: 'first', name: '第一条', inputs: { ...DEFAULT_SCENARIO_INPUTS, pathLossDb: '100.1' } },
+      { id: 'middle', name: '中间条', inputs: { ...DEFAULT_SCENARIO_INPUTS, pathLossDb: '110' } },
+      { id: 'last', name: '最后一条', inputs: { ...DEFAULT_SCENARIO_INPUTS, pathLossDb: '120' } },
+    ],
+  })
+
+  const before = matrix.getSnapshot().scenarios
+  const firstBefore = before.find((scenario) => scenario.id === 'first')
+  const lastBefore = before.find((scenario) => scenario.id === 'last')
+
+  assert.equal(matrix.removeScenario('middle'), true)
+  assert.deepEqual(
+    matrix.getSnapshot().scenarios.map((scenario) => scenario.id),
+    ['first', 'last'],
+  )
+  assert.deepEqual(matrix.getScenario('first'), firstBefore)
+  assert.deepEqual(matrix.getScenario('last'), lastBefore)
+})
+
+test('generated scenario ids remain unique after deleting and recreating scenarios', () => {
+  const matrix = createScenarioMatrix({ scenarios: [] })
+
+  const first = matrix.addScenario()
+  const second = matrix.addScenario()
+  assert.equal(matrix.removeScenario(first.id), true)
+
+  const recreated = matrix.addScenario()
+
+  assert.notEqual(recreated.id, first.id)
+  assert.deepEqual(
+    matrix.getSnapshot().scenarios.map((scenario) => scenario.id),
+    [second.id, recreated.id],
+  )
+})
+
 test('batch input updates calculate a scenario once after all raw values are written', () => {
   let solveCalls = 0
   const registry = new PathLossModelRegistry([

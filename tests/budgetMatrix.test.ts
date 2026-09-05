@@ -3,11 +3,23 @@ import test from 'node:test'
 
 import {
   BUDGET_ROWS,
+  getBudgetGroupsForScenarioCount,
+  getBudgetRowsForScenarioCount,
   budgetParameterLabel,
   parseBudgetClipboard,
   planBudgetClipboardPaste,
   serializeBudgetClipboard,
 } from '../src/domain/budgetMatrix.ts'
+
+test('empty scenario collections do not project calculated result rows or groups', () => {
+  const rows = getBudgetRowsForScenarioCount(0)
+  const groups = getBudgetGroupsForScenarioCount(0)
+
+  assert.equal(rows.some((row) => row.kind === 'result'), false)
+  assert.equal(groups.some((group) => group.id === 'results'), false)
+  assert.equal(getBudgetRowsForScenarioCount(1).some((row) => row.kind === 'result'), true)
+  assert.equal(getBudgetGroupsForScenarioCount(1).some((group) => group.id === 'results'), true)
+})
 
 test('budget rows keep units in the fixed parameter-name column and reserve a result row', () => {
   const frequency = BUDGET_ROWS.find((row) => row.id === 'frequency')

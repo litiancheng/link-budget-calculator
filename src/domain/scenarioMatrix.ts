@@ -1,0 +1,351 @@
+export const FREE_SPACE_PATH_LOSS_MODEL_ID = 'free-space'
+
+export const DEFAULT_SCENARIO_INPUTS = Object.freeze({
+  pathLossModel: FREE_SPACE_PATH_LOSS_MODEL_ID,
+  carrierFrequencyGHz: '2.4',
+  pathLossDb: '100.1',
+  txPowerDbm: '23',
+  txGainDbi: '2.1',
+  txLossDb: '1.2',
+  rxGainDbi: '2.1',
+  rxSensitivityDbm: '-92',
+  linkMarginDb: '12.9',
+})
+
+export type RawInputValue = string | number | null | undefined
+export type RawInputs = Readonly<Record<string, RawInputValue>>
+export type ScenarioInputs = Record<string, string>
+
+export type DiagnosticCode = 'MISSING_INPUT' | 'INVALID_INPUT' | 'UNKNOWN_MODEL' | 'CALCULATION_FAILED'
+
+export type ModelDiagnostic = {
+  code: DiagnosticCode
+  field: string
+  modelId?: string
+  value?: string
+  message?: string
+}
+
+export type PathLossModelInputDefinition = {
+  field: string
+  label: string
+  unit?: string
+  defaultValue?: string
+  groupId?: string
+  editor?: 'text' | 'select'
+}
+
+export type PathLossModelResultDefinition = {
+  field: string
+  label: string
+  unit?: string
+  groupId?: string
+}
+
+export type ModelResult = {
+  value: number | null
+  diagnostics: readonly ModelDiagnostic[]
+}
+
+export type PathLossModel = {
+  id: string
+  label: string
+  inputDefinitions?: readonly PathLossModelInputDefinition[]
+  resultDefinitions?: readonly PathLossModelResultDefinition[]
+  calculatePathLoss: (inputs: RawInputs) => ModelResult
+  solveDistance: (inputs: RawInputs) => ModelResult
+}
+
+export type ScenarioSeed = {
+  id: string
+  name: string
+  inputs?: RawInputs
+}
+
+export type ScenarioView = {
+  id: string
+  name: string
+  inputs: Readonly<ScenarioInputs>
+  result: {
+    coverageDistanceKm: number | null
+  }
+  diagnostics: readonly ModelDiagnostic[]
+}
+
+export type ScenarioMatrixSnapshot = {
+  scenarios: readonly ScenarioView[]
+}
+
+export type CreateScenarioMatrixOptions = {
+  registry?: PathLossModelRegistry
+  scenarios?: readonly ScenarioSeed[]
+}
+
+const FSPL_CONSTANT_DB = 92.45
+
+function toInputString(value: RawInputValue) {
+  return value == null ? '' : String(value)
+}
+
+function normalizeInputs(inputs: RawInputs = {}) {
+  return Object.fromEntries(Object.entries(inputs).map(([key, value]) => [key, toInputString(value)]))
+}
+
+function success(value: number): ModelResult {
+  return { value, diagnostics: [] }
+}
+
+function failure(diagnostic: ModelDiagnostic): ModelResult {
+  return { value: null, diagnostics: [diagnostic] }
+}
+
+function readPositiveNumber(inputs: RawInputs, aliases: readonly string[], field: string, invalidMessage = '输入值必须大于 0'): ModelResult & { parsed?: number } {
+  const raw = aliases.map((alias) => inputs[alias]).find((value) => value !== undefined && value !== null)
+  const text = toInputString(raw)
+
+  if (!text.trim()) {
+    return {
+      value: null,
+      diagnostics: [{ code: 'MISSING_INPUT', field }],
+    }
+  }
+
+  const parsed = Number(text)
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return {
+      value: null,
+      diagnostics: [{ code: 'INVALID_INPUT', field, value: text, message: invalidMessage }],
+    }
+  }
+
+  return { ...success(parsed), parsed }
+}
+
+function firstDiagnostic(...results: Array<ModelResult & { parsed?: number }>) {
+  return results.find((result) => result.diagnostics.length > 0)?.diagnostics[0]
+}
+
+export const freeSpacePathLossModel: PathLossModel = {
+  id: FREE_SPACE_PATH_LOSS_MODEL_ID,
+  label: '自由空间路损',
+  inputDefinitions: [
+    { field: 'carrierFrequencyGHz', label: '载波频率', unit: 'GHz', defaultValue: '2.4', groupId: 'propagation', editor: 'text' },
+    { field: 'pathLossDb', label: '路损值', unit: 'dB', defaultValue: '100.1', groupId: 'propagation', editor: 'text' },
+  ],
+  resultDefinitions: [
+    { field: 'coverageDistanceKm', label: '覆盖距离', unit: 'km', groupId: 'results' },
+  ],
+
+  calculatePathLoss(inputs) {
+    const frequency = readPositiveNumber(
+      inputs,
+      ['carrierFrequencyGHz', 'frequencyGHz', 'frequency'],
+      'carrierFrequencyGHz',
+      '载波频率必须大于 0',
+    )
+    const distance = readPositiveNumber(inputs, ['distanceKm', 'distance'], 'distanceKm', '传播距离必须大于 0')
+    const diagnostic = firstDiagnostic(frequency, distance)
+    if (diagnostic || frequency.parsed === undefined || distance.parsed === undefined) {
+      return failure(
+        diagnostic
+          ? { ...diagnostic, modelId: FREE_SPACE_PATH_LOSS_MODEL_ID }
+          : {
+              code: 'CALCULATION_FAILED',
+              field: 'distanceKm',
+              modelId: FREE_SPACE_PATH_LOSS_MODEL_ID,
+            },
+      )
+    }
+
+    return success(FSPL_CONSTANT_DB + 20 * Math.log10(frequency.parsed) + 20 * Math.log10(distance.parsed))
+  },
+
+  solveDistance(inputs) {
+    const frequency = readPositiveNumber(
+      inputs,
+      ['carrierFrequencyGHz', 'frequencyGHz', 'frequency'],
+      'carrierFrequencyGHz',
+      '载波频率必须大于 0',
+    )
+    const pathLoss = readPositiveNumber(inputs, ['pathLossDb', 'pathLoss', 'lossDb'], 'pathLossDb', '路损值必须大于 0')
+    const diagnostic = firstDiagnostic(frequency, pathLoss)
+    if (diagnostic || frequency.parsed === undefined || pathLoss.parsed === undefined) {
+      return failure(
+        diagnostic
+          ? { ...diagnostic, modelId: FREE_SPACE_PATH_LOSS_MODEL_ID }
+          : {
+              code: 'CALCULATION_FAILED',
+              field: 'pathLossDb',
+              modelId: FREE_SPACE_PATH_LOSS_MODEL_ID,
+            },
+      )
+    }
+
+    const distance = 10 ** ((pathLoss.parsed - FSPL_CONSTANT_DB - 20 * Math.log10(frequency.parsed)) / 20)
+    if (!Number.isFinite(distance)) {
+      return failure({
+        code: 'CALCULATION_FAILED',
+        field: 'pathLossDb',
+        modelId: FREE_SPACE_PATH_LOSS_MODEL_ID,
+      })
+    }
+
+    return success(distance)
+  },
+}
+
+export class PathLossModelRegistry {
+  private readonly models = new Map<string, PathLossModel>()
+
+  constructor(models: readonly PathLossModel[] = [freeSpacePathLossModel]) {
+    models.forEach((model) => this.register(model))
+  }
+
+  register(model: PathLossModel) {
+    if (this.models.has(model.id)) {
+      throw new Error(`A path-loss model with id "${model.id}" is already registered`)
+    }
+
+    this.models.set(model.id, model)
+    return this
+  }
+
+  get(id: string) {
+    return this.models.get(id)
+  }
+
+  list() {
+    return [...this.models.values()]
+  }
+}
+
+export class ScenarioMatrix {
+  private readonly registry: PathLossModelRegistry
+  private readonly scenarios: Array<{ id: string; name: string; inputs: ScenarioInputs }> = []
+  private nextScenarioNumber = 1
+
+  constructor(options: CreateScenarioMatrixOptions = {}) {
+    this.registry = options.registry ?? new PathLossModelRegistry()
+    const seeds = options.scenarios ?? [{ id: 'scenario-1', name: '新场景', inputs: DEFAULT_SCENARIO_INPUTS }]
+
+    seeds.forEach((seed) => {
+      if (this.scenarios.some((scenario) => scenario.id === seed.id)) {
+        throw new Error(`A scenario with id "${seed.id}" is already present`)
+      }
+
+      this.scenarios.push({
+        id: seed.id,
+        name: seed.name,
+        inputs: normalizeInputs(seed.inputs ?? DEFAULT_SCENARIO_INPUTS),
+      })
+      this.advanceScenarioNumber(seed.id)
+    })
+  }
+
+  getScenario(id: string) {
+    const scenario = this.scenarios.find((item) => item.id === id)
+    return scenario ? this.toView(scenario) : undefined
+  }
+
+  listPathLossModels() {
+    return this.registry.list()
+  }
+
+  getSnapshot(): ScenarioMatrixSnapshot {
+    return { scenarios: this.scenarios.map((scenario) => this.toView(scenario)) }
+  }
+
+  updateInput(id: string, field: string, value: RawInputValue) {
+    const scenario = this.requireScenario(id)
+    scenario.inputs[field] = toInputString(value)
+    return this.toView(scenario)
+  }
+
+  updateInputs(id: string, values: RawInputs) {
+    const scenario = this.requireScenario(id)
+    Object.entries(values).forEach(([field, value]) => {
+      scenario.inputs[field] = toInputString(value)
+    })
+    return this.toView(scenario)
+  }
+
+  recalculateScenario(id: string) {
+    const scenario = this.requireScenario(id)
+    return this.toView(scenario)
+  }
+
+  recalculateAll() {
+    return this.getSnapshot()
+  }
+
+  addScenario(seed: Partial<ScenarioSeed> = {}) {
+    const id = seed.id ?? this.createScenarioId()
+    if (this.scenarios.some((scenario) => scenario.id === id)) {
+      throw new Error(`A scenario with id "${id}" is already present`)
+    }
+
+    const scenario = {
+      id,
+      name: seed.name ?? '新场景',
+      inputs: normalizeInputs(seed.inputs ?? DEFAULT_SCENARIO_INPUTS),
+    }
+    this.scenarios.push(scenario)
+    this.advanceScenarioNumber(id)
+    return this.toView(scenario)
+  }
+
+  removeScenario(id: string) {
+    const index = this.scenarios.findIndex((scenario) => scenario.id === id)
+    if (index < 0) return false
+    this.scenarios.splice(index, 1)
+    return true
+  }
+
+  renameScenario(id: string, name: string) {
+    const scenario = this.requireScenario(id)
+    if (name.trim()) scenario.name = name
+    return this.toView(scenario)
+  }
+
+  private toView(scenario: { id: string; name: string; inputs: ScenarioInputs }): ScenarioView {
+    const modelId = scenario.inputs.pathLossModel
+    const model = this.registry.get(modelId)
+    const calculation = model
+      ? model.solveDistance(scenario.inputs)
+      : failure({
+          code: modelId ? 'UNKNOWN_MODEL' : 'MISSING_INPUT',
+          field: 'pathLossModel',
+          value: modelId,
+        })
+
+    return {
+      id: scenario.id,
+      name: scenario.name,
+      inputs: { ...scenario.inputs },
+      result: { coverageDistanceKm: calculation.value },
+      diagnostics: [...calculation.diagnostics],
+    }
+  }
+
+  private requireScenario(id: string) {
+    const scenario = this.scenarios.find((item) => item.id === id)
+    if (!scenario) throw new Error(`Unknown scenario "${id}"`)
+    return scenario
+  }
+
+  private createScenarioId() {
+    while (this.scenarios.some((scenario) => scenario.id === `scenario-${this.nextScenarioNumber}`)) {
+      this.nextScenarioNumber += 1
+    }
+    return `scenario-${this.nextScenarioNumber}`
+  }
+
+  private advanceScenarioNumber(id: string) {
+    const match = /^scenario-(\d+)$/.exec(id)
+    if (match) this.nextScenarioNumber = Math.max(this.nextScenarioNumber, Number(match[1]) + 1)
+  }
+}
+
+export function createScenarioMatrix(options: CreateScenarioMatrixOptions = {}) {
+  return new ScenarioMatrix(options)
+}

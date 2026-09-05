@@ -1,0 +1,179 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+
+import {
+  createScenarioMatrix,
+  DEFAULT_SCENARIO_INPUTS,
+  freeSpacePathLossModel,
+  PathLossModelRegistry,
+} from '../src/domain/scenarioMatrix.ts'
+
+test('default scenario calculates roughly one kilometre of free-space coverage', () => {
+  const matrix = createScenarioMatrix({
+    scenarios: [
+      {
+        id: 'baseline',
+        name: '基准链路',
+        inputs: { ...DEFAULT_SCENARIO_INPUTS },
+      },
+    ],
+  })
+
+  const baseline = matrix.getScenario('baseline')
+
+  assert.ok(baseline)
+  assert.equal(baseline.diagnostics.length, 0)
+  assert.ok(baseline.result.coverageDistanceKm !== null)
+  assert.ok(Math.abs(baseline.result.coverageDistanceKm - 1.005) < 0.01)
+})
+
+test('missing path loss clears the previous result and reports the input field', () => {
+  const matrix = createScenarioMatrix({
+    scenarios: [{ id: 'baseline', name: '基准链路', inputs: { ...DEFAULT_SCENARIO_INPUTS } }],
+  })
+
+  const updated = matrix.updateInput('baseline', 'pathLossDb', '')
+
+  assert.equal(updated.result.coverageDistanceKm, null)
+  assert.deepEqual(updated.diagnostics[0], {
+    code: 'MISSING_INPUT',
+    field: 'pathLossDb',
+    modelId: 'free-space',
+  })
+})
+
+test('non-positive model inputs are rejected with structured diagnostics', () => {
+  const matrix = createScenarioMatrix({
+    scenarios: [{ id: 'baseline', name: '基准链路', inputs: { ...DEFAULT_SCENARIO_INPUTS } }],
+  })
+
+  const invalidLoss = matrix.updateInput('baseline', 'pathLossDb', '0')
+  assert.equal(invalidLoss.result.coverageDistanceKm, null)
+  assert.equal(invalidLoss.diagnostics[0]?.code, 'INVALID_INPUT')
+  assert.equal(invalidLoss.diagnostics[0]?.field, 'pathLossDb')
+  assert.equal(invalidLoss.diagnostics[0]?.message, '路损值必须大于 0')
+
+  const invalidFrequency = matrix.updateInput('baseline', 'carrierFrequencyGHz', '-2.4')
+  assert.equal(invalidFrequency.result.coverageDistanceKm, null)
+  assert.equal(invalidFrequency.diagnostics[0]?.code, 'INVALID_INPUT')
+  assert.equal(invalidFrequency.diagnostics[0]?.field, 'carrierFrequencyGHz')
+  assert.equal(invalidFrequency.diagnostics[0]?.message, '载波频率必须大于 0')
+})
+
+test('a diagnostic in one scenario does not block another scenario', () => {
+  const matrix = createScenarioMatrix({
+    scenarios: [
+      { id: 'broken', name: '无效链路', inputs: { ...DEFAULT_SCENARIO_INPUTS, pathLossDb: '' } },
+      { id: 'valid', name: '有效链路', inputs: { ...DEFAULT_SCENARIO_INPUTS } },
+    ],
+  })
+
+  const snapshot = matrix.getSnapshot()
+  const broken = snapshot.scenarios.find((scenario) => scenario.id === 'broken')
+  const valid = snapshot.scenarios.find((scenario) => scenario.id === 'valid')
+
+  assert.ok(broken)
+  assert.ok(valid)
+  assert.equal(broken.result.coverageDistanceKm, null)
+  assert.equal(broken.diagnostics[0]?.field, 'pathLossDb')
+  assert.ok(valid.result.coverageDistanceKm !== null)
+  assert.equal(valid.diagnostics.length, 0)
+})
+
+test('free-space model exposes forward and inverse calculations in the declared units', () => {
+  const forward = freeSpacePathLossModel.calculatePathLoss({ carrierFrequencyGHz: '2.4', distanceKm: '1' })
+  const inverse = freeSpacePathLossModel.solveDistance({ carrierFrequencyGHz: '2.4', pathLossDb: '100.054' })
+
+  assert.ok(forward.value !== null)
+  assert.ok(Math.abs(forward.value - 100.054) < 0.001)
+  assert.ok(inverse.value !== null)
+  assert.ok(Math.abs(inverse.value - 1) < 0.001)
+})
+
+test('scenario input text is preserved and an unknown model is diagnosed', () => {
+  const registry = new PathLossModelRegistry()
+  const matrix = createScenarioMatrix({
+    registry,
+    scenarios: [{ id: 'baseline', name: '基准链路', inputs: { ...DEFAULT_SCENARIO_INPUTS } }],
+  })
+
+  const updated = matrix.updateInput('baseline', 'pathLossDb', ' 100.1 ')
+  assert.equal(updated.inputs.pathLossDb, ' 100.1 ')
+  assert.ok(updated.result.coverageDistanceKm !== null)
+
+  const unknown = matrix.updateInput('baseline', 'pathLossModel', 'not-registered')
+  assert.equal(unknown.result.coverageDistanceKm, null)
+  assert.equal(unknown.diagnostics[0]?.code, 'UNKNOWN_MODEL')
+  assert.equal(unknown.diagnostics[0]?.field, 'pathLossModel')
+})
+
+test('scenario lifecycle keeps stable ids and independent default inputs', () => {
+  const matrix = createScenarioMatrix({
+    scenarios: [{ id: 'first', name: '基准链路', inputs: { ...DEFAULT_SCENARIO_INPUTS } }],
+  })
+
+  const added = matrix.addScenario()
+
+  assert.equal(added.name, '新场景')
+  assert.notEqual(added.id, 'first')
+  assert.deepEqual(added.inputs, DEFAULT_SCENARIO_INPUTS)
+
+  matrix.updateInput('first', 'pathLossDb', '110')
+  assert.equal(matrix.getScenario(added.id)?.inputs.pathLossDb, DEFAULT_SCENARIO_INPUTS.pathLossDb)
+
+  matrix.renameScenario(added.id, '基准链路')
+  assert.equal(matrix.getScenario(added.id)?.name, '基准链路')
+  matrix.renameScenario(added.id, '   ')
+  assert.equal(matrix.getScenario(added.id)?.name, '基准链路')
+
+  assert.equal(matrix.removeScenario('first'), true)
+  assert.equal(matrix.removeScenario(added.id), true)
+  assert.deepEqual(matrix.getSnapshot().scenarios, [])
+
+  const recreated = matrix.addScenario()
+  assert.equal(recreated.name, '新场景')
+  assert.equal(matrix.getSnapshot().scenarios.length, 1)
+})
+
+test('batch input updates calculate a scenario once after all raw values are written', () => {
+  let solveCalls = 0
+  const registry = new PathLossModelRegistry([
+    {
+      id: 'counting-model',
+      label: '计数模型',
+      calculatePathLoss: () => ({ value: 1, diagnostics: [] }),
+      solveDistance: (inputs) => {
+        solveCalls += 1
+        return { value: Number(inputs.pathLossDb), diagnostics: [] }
+      },
+    },
+  ])
+  const matrix = createScenarioMatrix({
+    registry,
+    scenarios: [
+      {
+        id: 'baseline',
+        name: '基准链路',
+        inputs: { ...DEFAULT_SCENARIO_INPUTS, pathLossModel: 'counting-model' },
+      },
+    ],
+  })
+
+  matrix.updateInputs('baseline', {
+    pathLossDb: '101',
+    carrierFrequencyGHz: '2.5',
+    txPowerDbm: '24',
+  })
+
+  assert.equal(solveCalls, 1)
+  assert.equal(matrix.getScenario('baseline')?.result.coverageDistanceKm, 101)
+})
+test('free-space models publish their input and result extension metadata', () => {
+  assert.deepEqual(freeSpacePathLossModel.inputDefinitions, [
+    { field: 'carrierFrequencyGHz', label: '载波频率', unit: 'GHz', defaultValue: '2.4', groupId: 'propagation', editor: 'text' },
+    { field: 'pathLossDb', label: '路损值', unit: 'dB', defaultValue: '100.1', groupId: 'propagation', editor: 'text' },
+  ])
+  assert.deepEqual(freeSpacePathLossModel.resultDefinitions, [
+    { field: 'coverageDistanceKm', label: '覆盖距离', unit: 'km', groupId: 'results' },
+  ])
+})

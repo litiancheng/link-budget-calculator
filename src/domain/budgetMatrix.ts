@@ -176,7 +176,7 @@ export function getBudgetRow(rowId: string) {
 }
 
 function clipboardValue(value: unknown) {
-  return value == null ? '' : String(value).replace(/\r?\n/g, ' ')
+  return value == null ? '' : String(value).replace(/[\t\r\n]/g, ' ')
 }
 
 export function serializeBudgetClipboard({ columns, rows, includeHeader = false }: BudgetClipboardOptions) {
@@ -228,10 +228,14 @@ export function planBudgetClipboardPaste({
 
   if (
     matrix.length === 0 ||
+    !Number.isInteger(startRow) ||
+    startRow < 0 ||
     !startDefinition ||
     startDefinition.kind !== 'input' ||
+    !Number.isInteger(startColumn) ||
     startColumn < 1 ||
-    startColumn > scenarioIds.length
+    startColumn > scenarioIds.length ||
+    !scenarioIds[startColumn - 1]
   ) {
     return {
       accepted: false,

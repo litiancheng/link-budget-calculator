@@ -81,6 +81,8 @@ export type CreateScenarioMatrixOptions = {
   scenarios?: readonly ScenarioSeed[]
 }
 
+export type ScenarioInputBatch = Readonly<Record<string, RawInputs>>
+
 const FSPL_CONSTANT_DB = 92.45
 
 function toInputString(value: RawInputValue) {
@@ -257,16 +259,25 @@ export class ScenarioMatrix {
 
   updateInput(id: string, field: string, value: RawInputValue) {
     const scenario = this.requireScenario(id)
-    scenario.inputs[field] = toInputString(value)
+    this.applyInputValues(scenario, { [field]: value })
     return this.toView(scenario)
   }
 
   updateInputs(id: string, values: RawInputs) {
     const scenario = this.requireScenario(id)
-    Object.entries(values).forEach(([field, value]) => {
-      scenario.inputs[field] = toInputString(value)
-    })
+    this.applyInputValues(scenario, values)
     return this.toView(scenario)
+  }
+
+  updateInputsBatch(batch: ScenarioInputBatch) {
+    const entries = Object.entries(batch).map(([id, values]) => ({
+      scenario: this.requireScenario(id),
+      values,
+    }))
+
+    entries.forEach(({ scenario, values }) => this.applyInputValues(scenario, values))
+
+    return entries.map(({ scenario }) => this.toView(scenario))
   }
 
   recalculateScenario(id: string) {
@@ -325,6 +336,12 @@ export class ScenarioMatrix {
       result: { coverageDistanceKm: calculation.value },
       diagnostics: [...calculation.diagnostics],
     }
+  }
+
+  private applyInputValues(scenario: { inputs: ScenarioInputs }, values: RawInputs) {
+    Object.entries(values).forEach(([field, value]) => {
+      scenario.inputs[field] = toInputString(value)
+    })
   }
 
   private requireScenario(id: string) {

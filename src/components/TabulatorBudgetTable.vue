@@ -371,9 +371,11 @@ function initTable() {
   tableElement.value.addEventListener('keydown', handleCopyShortcut, true)
 }
 
-function syncScenarioView(view: ScenarioView) {
-  const index = scenarioViews.value.findIndex((item) => item.id === view.id)
-  if (index >= 0) scenarioViews.value[index] = view
+function syncScenarioViews(views: readonly ScenarioView[]) {
+  views.forEach((view) => {
+    const index = scenarioViews.value.findIndex((item) => item.id === view.id)
+    if (index >= 0) scenarioViews.value[index] = view
+  })
 
   const projectedRows = projectRows(scenarioViews.value)
   rows = projectedRows
@@ -396,7 +398,7 @@ function handleCellEdited(cell: any) {
   if (!definition?.field || !isScenarioField(field) || !isEditableScenarioCell(cell)) return
 
   const view = scenarioMatrix.updateInput(field, definition.field, cell.getValue())
-  syncScenarioView(view)
+  syncScenarioViews([view])
 }
 
 function rebuildTable() {
@@ -583,16 +585,14 @@ function pasteIntoTable(text: string) {
 
   if (!plan.accepted) return
 
-  const updatesByScenario = new Map<string, Record<string, string>>()
+  const updatesByScenario: Record<string, Record<string, string>> = {}
   plan.updates.forEach((update) => {
-    const inputs = updatesByScenario.get(update.scenarioId) ?? {}
+    const inputs = updatesByScenario[update.scenarioId] ?? {}
     inputs[update.field] = update.value
-    updatesByScenario.set(update.scenarioId, inputs)
+    updatesByScenario[update.scenarioId] = inputs
   })
 
-  updatesByScenario.forEach((inputs, scenarioId) => {
-    syncScenarioView(scenarioMatrix.updateInputs(scenarioId, inputs))
-  })
+  syncScenarioViews(scenarioMatrix.updateInputsBatch(updatesByScenario))
 }
 
 function handleCopyEvent(event: ClipboardEvent) {

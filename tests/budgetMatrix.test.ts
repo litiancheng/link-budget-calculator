@@ -109,3 +109,32 @@ test('paste treats source text as data and ignores cells beyond the matrix', () 
     ['c', 'd'],
   ])
 })
+
+test('clipboard serialization keeps cell values inside their TSV boundaries', () => {
+  const text = serializeBudgetClipboard({
+    columns: [{ id: 'baseline', kind: 'scenario', title: '基准\t链路' }],
+    rows: [
+      {
+        id: 'path-loss-model',
+        values: { baseline: 'free\nspace' },
+      },
+    ],
+    includeHeader: true,
+  })
+
+  assert.equal(text, '基准 链路\nfree space')
+})
+
+test('paste rejects malformed origin coordinates instead of accepting a no-op', () => {
+  const startRow = BUDGET_ROWS.findIndex((row) => row.id === 'path-loss-model')
+
+  const plan = planBudgetClipboardPaste({
+    text: 'free-space',
+    startRow,
+    startColumn: Number.NaN,
+    scenarioIds: ['baseline'],
+  })
+
+  assert.equal(plan.accepted, false)
+  assert.deepEqual(plan.updates, [])
+})

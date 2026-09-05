@@ -206,6 +206,52 @@ test('batch input updates calculate a scenario once after all raw values are wri
   assert.equal(solveCalls, 1)
   assert.equal(matrix.getScenario('baseline')?.result.coverageDistanceKm, 101)
 })
+
+test('multi-scenario batch input updates solve each affected scenario once', () => {
+  let solveCalls = 0
+  const registry = new PathLossModelRegistry([
+    {
+      id: 'counting-model',
+      label: '计数模型',
+      calculatePathLoss: () => ({ value: 1, diagnostics: [] }),
+      solveDistance: (inputs) => {
+        solveCalls += 1
+        return { value: Number(inputs.pathLossDb), diagnostics: [] }
+      },
+    },
+  ])
+  const matrix = createScenarioMatrix({
+    registry,
+    scenarios: [
+      {
+        id: 'baseline',
+        name: '基准链路',
+        inputs: { ...DEFAULT_SCENARIO_INPUTS, pathLossModel: 'counting-model' },
+      },
+      {
+        id: 'urban',
+        name: '城市遮挡',
+        inputs: { ...DEFAULT_SCENARIO_INPUTS, pathLossModel: 'counting-model' },
+      },
+    ],
+  })
+
+  solveCalls = 0
+  const updated = matrix.updateInputsBatch({
+    baseline: { pathLossDb: '101' },
+    urban: { pathLossDb: '111', carrierFrequencyGHz: '5.8' },
+  })
+
+  assert.equal(solveCalls, 2)
+  assert.deepEqual(
+    updated.map((scenario) => [scenario.id, scenario.result.coverageDistanceKm]),
+    [
+      ['baseline', 101],
+      ['urban', 111],
+    ],
+  )
+})
+
 test('free-space models publish their input and result extension metadata', () => {
   assert.deepEqual(freeSpacePathLossModel.inputDefinitions, [
     { field: 'carrierFrequencyGHz', label: '载波频率', unit: 'GHz', defaultValue: '2.4', groupId: 'propagation', editor: 'text' },

@@ -10,7 +10,6 @@ import {
 import {
   BUDGET_ROWS,
   budgetParameterLabel,
-  getBudgetGroupsForScenarioCount,
   getBudgetRowsForScenarioCount,
   planBudgetClipboardPaste,
   serializeBudgetClipboard,
@@ -401,8 +400,8 @@ function buildColumns() {
       title: '参数名称',
       field: 'parameter',
       frozen: true,
-      width: 220,
-      minWidth: 190,
+      width: 170,
+      minWidth: 150,
       headerSort: false,
       formatter: (cell: any) => '<span class="parameter-label">' + escapeHtml(cell.getValue()) + '</span>',
     },
@@ -758,18 +757,6 @@ onBeforeUnmount(destroyTable)
     </div>
 
     <div class="budget-matrix-layout">
-      <aside class="budget-group-panel" aria-label="参数分组">
-        <div class="budget-group-panel-spacer" aria-hidden="true" />
-        <div
-          v-for="group in getBudgetGroupsForScenarioCount(scenarioViews.length, showAdvancedInputs)"
-          :key="group.id"
-          class="budget-group"
-          :class="'budget-group--' + group.id"
-          :style="{ '--budget-group-row-count': group.rowIds.length }"
-        >
-          {{ group.label }}
-        </div>
-      </aside>
       <div ref="tableElement" class="budget-table budget-table--report" />
     </div>
   </div>

@@ -5,6 +5,7 @@ import {
   calculateNumberOfResourceElements,
   calculateTransportBlockSize,
   calculateTransportBlockSizeFromNRe,
+  calculateTransportRate,
   lookupMcsParameters,
 } from '../src/domain/transportBlockSize.ts'
 
@@ -212,4 +213,80 @@ test('uplink rejects the PDSCH 1024QAM table and downlink rejects multi-slot res
   })
   assert.equal(wrongSlotCount.value, null)
   assert.equal(wrongSlotCount.diagnostics[0]?.field, 'numberOfSlots')
+})
+
+test('transport rate calculates ordinary and special downlink slots independently', () => {
+  const inputs = {
+    mcsTable: 'pdsch-table-2' as const,
+    mcsIndex: 10,
+    numberOfLayers: 1,
+    nPrb: 10,
+    nDmrsPrb: 12,
+    nOhPrb: 0,
+    nPrbOutsideBwp: 0,
+    numberOfSlots: 1,
+    pi2Bpsk: false,
+    scalingFactor: 1 as const,
+    downlinkSlotsPer10ms: 10,
+    uplinkSlotsPer10ms: 10,
+    specialSlotsPer10ms: 1,
+    specialDownlinkSymbols: 10,
+    pdcchSymbols: 2,
+  }
+  const ordinary = calculateTransportBlockSize({ ...inputs, direction: 'downlink', nSymbols: 12 })
+  const special = calculateTransportBlockSize({ ...inputs, direction: 'downlink', nSymbols: 8 })
+  const rate = calculateTransportRate({ ...inputs, direction: 'downlink' })
+
+  assert.equal(rate.details?.normalDownlinkSymbols, 12)
+  assert.equal(rate.details?.specialDownlinkSymbols, 8)
+  assert.equal(rate.details?.normalDownlinkTbs, ordinary.value)
+  assert.equal(rate.details?.specialDownlinkTbs, special.value)
+  assert.equal(rate.details?.bitsPer10ms, (ordinary.value ?? 0) * 10 + (special.value ?? 0))
+  assert.equal(rate.value, ((ordinary.value ?? 0) * 10 + (special.value ?? 0)) / 10_000)
+})
+
+test('transport rate uses only uplink slots and ignores special-slot uplink symbols', () => {
+  const inputs = {
+    mcsTable: 'pdsch-table-2' as const,
+    mcsIndex: 10,
+    numberOfLayers: 1,
+    nPrb: 10,
+    nDmrsPrb: 12,
+    nOhPrb: 0,
+    nPrbOutsideBwp: 0,
+    numberOfSlots: 1,
+    pi2Bpsk: false,
+    scalingFactor: 1 as const,
+    downlinkSlotsPer10ms: 10,
+    uplinkSlotsPer10ms: 10,
+    specialSlotsPer10ms: 3,
+    specialDownlinkSymbols: 10,
+    pdcchSymbols: 2,
+  }
+  const uplinkTbs = calculateTransportBlockSize({ ...inputs, direction: 'uplink', nSymbols: 14 })
+  const rate = calculateTransportRate({ ...inputs, direction: 'uplink' })
+
+  assert.equal(rate.details?.uplinkSymbols, 14)
+  assert.equal(rate.details?.uplinkTbs, uplinkTbs.value)
+  assert.equal(rate.details?.bitsPer10ms, (uplinkTbs.value ?? 0) * 10)
+  assert.equal(rate.value, (uplinkTbs.value ?? 0) / 1_000)
+})
+
+test('transport rate rejects an unusable special downlink duration', () => {
+  const rate = calculateTransportRate({
+    direction: 'downlink',
+    mcsTable: 'pdsch-table-2',
+    mcsIndex: 10,
+    numberOfLayers: 1,
+    nPrb: 10,
+    nDmrsPrb: 12,
+    downlinkSlotsPer10ms: 10,
+    uplinkSlotsPer10ms: 0,
+    specialSlotsPer10ms: 1,
+    specialDownlinkSymbols: 2,
+    pdcchSymbols: 2,
+  })
+
+  assert.equal(rate.value, null)
+  assert.equal(rate.diagnostics[0]?.field, 'specialDownlinkSymbols')
 })

@@ -101,7 +101,11 @@ const diagnosticFieldLabels: Record<string, string> = {
   mcsIndex: 'MCS 索引',
   numberOfLayers: '传输层数',
   nPrb: '分配 PRB 数',
-  nSymbols: '调度符号数',
+  downlinkSlotsPer10ms: '下行时隙数（每10ms）',
+  uplinkSlotsPer10ms: '上行时隙数（每10ms）',
+  specialSlotsPer10ms: '特殊时隙数（每10ms）',
+  specialDownlinkSymbols: '特殊时隙下行符号数',
+  pdcchSymbols: 'PDCCH 占用符号数',
   mcsTable: 'MCS 表',
   nDmrsPrb: '每 PRB DM-RS RE 数',
 }
@@ -112,7 +116,11 @@ const tbsDiagnosticFieldLabels: Record<string, string> = {
   mcsIndex: 'MCS 索引',
   numberOfLayers: '传输层数',
   nPrb: '分配 PRB 数',
-  nSymbols: '调度符号数',
+  downlinkSlotsPer10ms: '下行时隙数（每10ms）',
+  uplinkSlotsPer10ms: '上行时隙数（每10ms）',
+  specialSlotsPer10ms: '特殊时隙数（每10ms）',
+  specialDownlinkSymbols: '特殊时隙下行符号数',
+  pdcchSymbols: 'PDCCH 占用符号数',
   nDmrsPrb: '每 PRB DM-RS RE 数',
 }
 
@@ -150,6 +158,15 @@ function scenarioResultValue(view: ScenarioView, definition: BudgetRowDefinition
     }
 
     const diagnostic = view.tbDiagnostics[0]
+    return diagnostic ? tbsDiagnosticMessage(diagnostic) : ''
+  }
+
+  if (definition.id === 'transport-rate') {
+    if (view.result.transportRateMbps !== null) {
+      return view.result.transportRateMbps.toFixed(2)
+    }
+
+    const diagnostic = view.rateDiagnostics[0]
     return diagnostic ? tbsDiagnosticMessage(diagnostic) : ''
   }
 
@@ -200,14 +217,15 @@ function hasDiagnostic(scenarioId: string, field: string) {
   return (
     view?.diagnostics.some((diagnostic) => diagnostic.field === field) ||
     view?.tbDiagnostics.some((diagnostic) => diagnostic.field === field) ||
+    view?.rateDiagnostics.some((diagnostic) => diagnostic.field === field) ||
     false
   )
 }
 
 function scenarioResultIsValid(view: ScenarioView, definition: BudgetRowDefinition) {
-  return definition.id === 'transport-block-size'
-    ? view.result.transportBlockSizeBits !== null
-    : view.result.coverageDistanceKm !== null
+  if (definition.id === 'transport-block-size') return view.result.transportBlockSizeBits !== null
+  if (definition.id === 'transport-rate') return view.result.transportRateMbps !== null
+  return view.result.coverageDistanceKm !== null
 }
 
 function modelLabel(value: unknown) {

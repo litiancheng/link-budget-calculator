@@ -40,6 +40,49 @@ test('default scenario calculates the protocol TBS with Table 2', () => {
   assert.deepEqual(baseline.tbDiagnostics, [])
 })
 
+test('default scenario derives downlink symbols and calculates Mbps over 10 ms', () => {
+  const matrix = createScenarioMatrix({
+    scenarios: [{ id: 'baseline', name: '基准链路', inputs: { ...DEFAULT_SCENARIO_INPUTS } }],
+  })
+
+  const baseline = matrix.getScenario('baseline')
+
+  assert.ok(baseline)
+  assert.equal(baseline.inputs.nSymbols, undefined)
+  assert.equal(baseline.inputs.pdcchSymbols, '2')
+  assert.equal(baseline.result.transportRateMbps, 3.496)
+  assert.deepEqual(baseline.rateDiagnostics, [])
+})
+
+test('scenario rate follows the selected direction and ignores the other slot counts', () => {
+  const matrix = createScenarioMatrix({
+    scenarios: [{ id: 'baseline', name: '基准链路', inputs: { ...DEFAULT_SCENARIO_INPUTS } }],
+  })
+
+  const uplink = matrix.updateInputs('baseline', {
+    direction: 'uplink',
+    downlinkSlotsPer10ms: '0',
+    uplinkSlotsPer10ms: '10',
+    specialSlotsPer10ms: '3',
+    specialDownlinkSymbols: '10',
+  })
+
+  assert.equal(uplink.result.transportRateMbps, 3.968)
+  assert.deepEqual(uplink.rateDiagnostics, [])
+})
+
+test('invalid rate configuration reports rate diagnostics without clearing coverage', () => {
+  const matrix = createScenarioMatrix({
+    scenarios: [{ id: 'baseline', name: '基准链路', inputs: { ...DEFAULT_SCENARIO_INPUTS } }],
+  })
+
+  const updated = matrix.updateInput('baseline', 'pdcchSymbols', '14')
+
+  assert.ok(updated.result.coverageDistanceKm !== null)
+  assert.equal(updated.result.transportRateMbps, null)
+  assert.equal(updated.rateDiagnostics[0]?.field, 'pdcchSymbols')
+})
+
 test('link-budget TBS restricts the MCS table to Table 1 or Table 2', () => {
   const matrix = createScenarioMatrix({
     scenarios: [{ id: 'baseline', name: '基准链路', inputs: { ...DEFAULT_SCENARIO_INPUTS } }],

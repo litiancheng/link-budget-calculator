@@ -1,5 +1,7 @@
 import {
   calculateTransportBlockSize,
+  calculateTransportRate,
+  NR_SLOT_SYMBOLS,
   type McsTableId,
   type TbsDiagnostic,
   type TransportDirection,
@@ -13,7 +15,11 @@ export const DEFAULT_SCENARIO_INPUTS = Object.freeze({
   mcsIndex: '10',
   numberOfLayers: '1',
   nPrb: '10',
-  nSymbols: '12',
+  downlinkSlotsPer10ms: '10',
+  uplinkSlotsPer10ms: '10',
+  specialSlotsPer10ms: '0',
+  specialDownlinkSymbols: '0',
+  pdcchSymbols: '2',
   nDmrsPrb: '12',
   nOhPrb: '0',
   nPrbOutsideBwp: '0',
@@ -88,9 +94,11 @@ export type ScenarioView = {
   result: {
     coverageDistanceKm: number | null
     transportBlockSizeBits: number | null
+    transportRateMbps: number | null
   }
   diagnostics: readonly ModelDiagnostic[]
   tbDiagnostics: readonly TbsDiagnostic[]
+  rateDiagnostics: readonly TbsDiagnostic[]
 }
 
 export type ScenarioMatrixSnapshot = {
@@ -141,13 +149,51 @@ function calculateScenarioTransportBlockSize(inputs: ScenarioInputs) {
     mcsIndex: readScenarioNumber(inputs, 'mcsIndex'),
     numberOfLayers: readScenarioNumber(inputs, 'numberOfLayers'),
     nPrb: readScenarioNumber(inputs, 'nPrb'),
-    nSymbols: readScenarioNumber(inputs, 'nSymbols'),
+    nSymbols: inputs.direction.trim() === 'downlink'
+      ? NR_SLOT_SYMBOLS - readScenarioNumber(inputs, 'pdcchSymbols')
+      : NR_SLOT_SYMBOLS,
     nDmrsPrb: readScenarioNumber(inputs, 'nDmrsPrb'),
     nOhPrb: 0,
     nPrbOutsideBwp: 0,
     numberOfSlots: 1,
     pi2Bpsk: false,
     scalingFactor: 1,
+  })
+}
+
+function calculateScenarioTransportRate(inputs: ScenarioInputs) {
+  const mcsTable = inputs.mcsTable.trim() as McsTableId
+  if (mcsTable !== 'pdsch-table-1' && mcsTable !== 'pdsch-table-2') {
+    return {
+      value: null,
+      diagnostics: [
+        {
+          code: 'UNSUPPORTED_MCS_TABLE',
+          field: 'mcsTable',
+          value: inputs.mcsTable,
+          message: '链路预算只允许使用 MCS Table 1 或 Table 2',
+        },
+      ] satisfies TbsDiagnostic[],
+    }
+  }
+
+  return calculateTransportRate({
+    direction: inputs.direction.trim() as TransportDirection,
+    mcsTable,
+    mcsIndex: readScenarioNumber(inputs, 'mcsIndex'),
+    numberOfLayers: readScenarioNumber(inputs, 'numberOfLayers'),
+    nPrb: readScenarioNumber(inputs, 'nPrb'),
+    nDmrsPrb: readScenarioNumber(inputs, 'nDmrsPrb'),
+    nOhPrb: 0,
+    nPrbOutsideBwp: 0,
+    numberOfSlots: 1,
+    pi2Bpsk: false,
+    scalingFactor: 1,
+    downlinkSlotsPer10ms: readScenarioNumber(inputs, 'downlinkSlotsPer10ms'),
+    uplinkSlotsPer10ms: readScenarioNumber(inputs, 'uplinkSlotsPer10ms'),
+    specialSlotsPer10ms: readScenarioNumber(inputs, 'specialSlotsPer10ms'),
+    specialDownlinkSymbols: readScenarioNumber(inputs, 'specialDownlinkSymbols'),
+    pdcchSymbols: readScenarioNumber(inputs, 'pdcchSymbols'),
   })
 }
 
@@ -387,6 +433,7 @@ export class ScenarioMatrix {
           value: modelId,
         })
     const tbsCalculation = calculateScenarioTransportBlockSize(scenario.inputs)
+    const rateCalculation = calculateScenarioTransportRate(scenario.inputs)
 
     return {
       id: scenario.id,
@@ -395,9 +442,11 @@ export class ScenarioMatrix {
       result: {
         coverageDistanceKm: calculation.value,
         transportBlockSizeBits: tbsCalculation.value,
+        transportRateMbps: rateCalculation.value,
       },
       diagnostics: [...calculation.diagnostics],
       tbDiagnostics: [...tbsCalculation.diagnostics],
+      rateDiagnostics: [...rateCalculation.diagnostics],
     }
   }
 

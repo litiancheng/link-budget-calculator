@@ -127,8 +127,39 @@ export type TransportBlockSizeInputs = ResourceElementInputs & {
   scalingFactor?: TbsScalingFactor
 }
 
+export type TransportRateInputs = Omit<TransportBlockSizeInputs, 'nSymbols'> & {
+  /** Number of ordinary downlink slots in one 10 ms radio frame. */
+  downlinkSlotsPer10ms: number
+  /** Number of ordinary uplink slots in one 10 ms radio frame. */
+  uplinkSlotsPer10ms: number
+  /** Number of special slots in one 10 ms radio frame. */
+  specialSlotsPer10ms: number
+  /** Number of downlink symbols in a special slot, including PDCCH symbols. */
+  specialDownlinkSymbols: number
+  /** Number of symbols occupied by PDCCH in each slot. */
+  pdcchSymbols: number
+}
+
+export type TransportRateDetails = {
+  direction: TransportDirection
+  slotSymbols: 14
+  normalDownlinkSymbols: number
+  specialDownlinkSymbols: number
+  uplinkSymbols: 14
+  downlinkSlotsPer10ms: number
+  uplinkSlotsPer10ms: number
+  specialSlotsPer10ms: number
+  normalDownlinkTbs?: number
+  specialDownlinkTbs?: number
+  uplinkTbs?: number
+  bitsPer10ms: number
+  rateMbps: number
+}
+
 const N_SC_RB = 12 as const
 const MAX_RE_PER_PRB = 156 as const
+export const NR_SLOT_SYMBOLS = 14 as const
+export const RATE_PERIOD_SECONDS = 0.01 as const
 
 /** Table 5.1.3.2-1, TBS for N_info <= 3824, TS 38.214 V19.4.0. */
 export const TBS_TABLE_FOR_NINFO_LE_3824: readonly number[] = Object.freeze([
@@ -581,9 +612,128 @@ export function calculateTransportBlockSize(inputs: TransportBlockSizeInputs): T
   }
 }
 
+function validateNonNegativeInteger(value: number, field: string, message: string) {
+  return isFiniteInteger(value) && value >= 0
+    ? undefined
+    : invalid(field, message, value)
+}
+
+/**
+ * Calculates the payload rate represented by a 10 ms slot configuration.
+ * Ordinary and special downlink slots use separate TBS calculations because
+ * their available data-symbol counts can differ. Special-slot uplink symbols
+ * are intentionally excluded from the calculation.
+ */
+export function calculateTransportRate(inputs: TransportRateInputs): TbsResult<TransportRateDetails> {
+  const {
+    direction,
+    downlinkSlotsPer10ms,
+    uplinkSlotsPer10ms,
+    specialSlotsPer10ms,
+    specialDownlinkSymbols,
+    pdcchSymbols,
+    ...transportInputs
+  } = inputs
+
+  if (direction !== 'downlink' && direction !== 'uplink') {
+    return failure(invalid('direction', '传输方向必须是 downlink 或 uplink', direction))
+  }
+
+  const countDiagnostics = [
+    validateNonNegativeInteger(downlinkSlotsPer10ms, 'downlinkSlotsPer10ms', '下行时隙数必须是非负整数'),
+    validateNonNegativeInteger(uplinkSlotsPer10ms, 'uplinkSlotsPer10ms', '上行时隙数必须是非负整数'),
+    validateNonNegativeInteger(specialSlotsPer10ms, 'specialSlotsPer10ms', '特殊时隙数必须是非负整数'),
+  ]
+  const countDiagnostic = countDiagnostics.find(Boolean)
+  if (countDiagnostic) return failure(countDiagnostic)
+
+  if (!isFiniteInteger(pdcchSymbols) || pdcchSymbols < 0 || pdcchSymbols >= NR_SLOT_SYMBOLS) {
+    return failure(invalid('pdcchSymbols', 'PDCCH 占用符号数必须是 0 到 13 的整数', pdcchSymbols))
+  }
+  if (!isFiniteInteger(specialDownlinkSymbols) || specialDownlinkSymbols < 0 || specialDownlinkSymbols > NR_SLOT_SYMBOLS) {
+    return failure(invalid('specialDownlinkSymbols', '特殊时隙下行符号数必须是 0 到 14 的整数', specialDownlinkSymbols))
+  }
+
+  const normalDownlinkSymbols = NR_SLOT_SYMBOLS - pdcchSymbols
+  const specialDownlinkDataSymbols = specialDownlinkSymbols - pdcchSymbols
+  if (specialSlotsPer10ms > 0 && specialDownlinkDataSymbols <= 0) {
+    return failure(invalid(
+      'specialDownlinkSymbols',
+      '存在特殊时隙时，特殊时隙下行符号数必须大于 PDCCH 占用符号数',
+      specialDownlinkSymbols,
+    ))
+  }
+
+  const makeTbsInputs = (slotDirection: TransportDirection, nSymbols: number): TransportBlockSizeInputs => ({
+    ...transportInputs,
+    direction: slotDirection,
+    nSymbols,
+  })
+
+  let normalDownlinkTbs: number | undefined
+  let specialDownlinkTbs: number | undefined
+  let uplinkTbs: number | undefined
+
+  if (direction === 'downlink') {
+    if (downlinkSlotsPer10ms > 0) {
+      const result = calculateTransportBlockSize(makeTbsInputs('downlink', normalDownlinkSymbols))
+      if (result.value === null) return failure(result.diagnostics[0] ?? invalid('rate', '下行 TBS 无法计算'))
+      normalDownlinkTbs = result.value
+    }
+
+    if (specialSlotsPer10ms > 0) {
+      const result = calculateTransportBlockSize(makeTbsInputs('downlink', specialDownlinkDataSymbols))
+      if (result.value === null) return failure(result.diagnostics[0] ?? invalid('rate', '特殊时隙下行 TBS 无法计算'))
+      specialDownlinkTbs = result.value
+    }
+  } else if (uplinkSlotsPer10ms > 0) {
+    const result = calculateTransportBlockSize(makeTbsInputs('uplink', NR_SLOT_SYMBOLS))
+    if (result.value === null) return failure(result.diagnostics[0] ?? invalid('rate', '上行 TBS 无法计算'))
+    uplinkTbs = result.value
+  }
+
+  const bitsPer10ms = direction === 'downlink'
+    ? downlinkSlotsPer10ms * (normalDownlinkTbs ?? 0) + specialSlotsPer10ms * (specialDownlinkTbs ?? 0)
+    : uplinkSlotsPer10ms * (uplinkTbs ?? 0)
+
+  if (!Number.isSafeInteger(bitsPer10ms)) {
+    return failure({
+      code: 'CALCULATION_FAILED',
+      field: 'bitsPer10ms',
+      message: '10 ms 内传输比特数无法表示为安全整数',
+    })
+  }
+
+  const rateMbps = bitsPer10ms / RATE_PERIOD_SECONDS / 1_000_000
+  if (!Number.isFinite(rateMbps)) {
+    return failure({
+      code: 'CALCULATION_FAILED',
+      field: 'rateMbps',
+      message: '传输速率无法计算',
+    })
+  }
+
+  return success(rateMbps, {
+    direction,
+    slotSymbols: NR_SLOT_SYMBOLS,
+    normalDownlinkSymbols,
+    specialDownlinkSymbols: specialDownlinkDataSymbols,
+    uplinkSymbols: NR_SLOT_SYMBOLS,
+    downlinkSlotsPer10ms,
+    uplinkSlotsPer10ms,
+    specialSlotsPer10ms,
+    normalDownlinkTbs,
+    specialDownlinkTbs,
+    uplinkTbs,
+    bitsPer10ms,
+    rateMbps,
+  })
+}
+
 /** Short aliases for callers that use the terminology "TB size"/"TBS". */
 export const calculateTbs = calculateTransportBlockSize
 export const calculateTbSize = calculateTransportBlockSize
 export const calculateTBSize = calculateTransportBlockSize
 export const calculateTbsFromNRe = calculateTransportBlockSizeFromNRe
 export const calculateTbSizeFromNRe = calculateTransportBlockSizeFromNRe
+export const calculateRate = calculateTransportRate

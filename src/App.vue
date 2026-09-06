@@ -41,12 +41,12 @@ function formatScenarioCount(count: number) {
             <div>
               <p class="eyebrow">SCENARIO REVIEW / 02</p>
               <h1>链路预算参数表</h1>
-              <p class="report-intro">双击编辑场景名或场景值，或与 Excel 互相复制粘贴参数矩阵；NR TBS 高级参数可展开查看。</p>
+              <p class="report-intro">双击编辑场景名或场景值，或与 Excel 互相复制粘贴参数矩阵；NR TBS 高级参数可展开查看，并按 10 ms 时隙配置计算传输速率。</p>
             </div>
             <div class="report-header-meta">
               <span class="meta-label">原型状态</span>
               <strong>FSPL + NR TBS</strong>
-              <span>覆盖距离与传输块大小</span>
+                  <span>覆盖距离、传输块大小与传输速率</span>
             </div>
           </header>
 
@@ -55,7 +55,7 @@ function formatScenarioCount(count: number) {
             <div class="report-summary-value"><strong>{{ formatScenarioCount(scenarioCount) }}</strong><span>场景</span></div>
             <div class="report-summary-value"><strong>{{ budgetParameterCount }}</strong><span>参数项</span></div>
             <div class="report-summary-value"><strong>dB / dBm / bits</strong><span>主要单位</span></div>
-            <div class="report-summary-caption">基础 NR TBS 参数默认展示；高级参数可展开，固定协议参数不进入编辑表。</div>
+            <div class="report-summary-caption">基础 NR TBS 参数默认展示；高级参数可展开，10 ms 传输速率按当前传输方向计算。</div>
           </div>
 
           <section id="matrix" class="report-table-wrap">

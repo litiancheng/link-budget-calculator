@@ -30,6 +30,11 @@ test('budget rows keep units in the fixed parameter-name column and reserve a re
   assert.ok(coverage)
   assert.equal(coverage.kind, 'result')
   assert.equal(budgetParameterLabel(coverage), '覆盖距离（km）')
+
+  const rate = BUDGET_ROWS.find((row) => row.id === 'transport-rate')
+  assert.ok(rate)
+  assert.equal(budgetParameterLabel(rate), '传输速率（Mbps）')
+  assert.equal(rate.editor, 'readonly')
 })
 
 test('TBS inputs separate always-visible basics from collapsible advanced rows', () => {
@@ -40,7 +45,17 @@ test('TBS inputs separate always-visible basics from collapsible advanced rows',
     .filter((row) => row.groupId === 'transport-block')
     .map((row) => row.id)
 
-  assert.deepEqual(basicRows, ['tb-direction', 'tb-mcs-index', 'tb-layers', 'tb-prb', 'tb-symbols'])
+  assert.deepEqual(basicRows, [
+    'tb-direction',
+    'tb-mcs-index',
+    'tb-layers',
+    'tb-prb',
+    'tb-downlink-slots',
+    'tb-uplink-slots',
+    'tb-special-slots',
+    'tb-special-downlink-symbols',
+    'tb-pdcch-symbols',
+  ])
   assert.deepEqual(allRows, [...basicRows, 'tb-mcs-table', 'tb-dmrs-re'])
 
   const collapsedGroup = getBudgetGroupsForScenarioCount(1, false).find((group) => group.id === 'transport-block')
@@ -156,10 +171,10 @@ test('paste rejects malformed origin coordinates instead of accepting a no-op', 
 
 test('paste follows the currently visible rows when advanced inputs are collapsed', () => {
   const visibleRows = getBudgetRowsForScenarioCount(1, false)
-  const startRow = visibleRows.findIndex((row) => row.id === 'tb-symbols')
+  const startRow = visibleRows.findIndex((row) => row.id === 'tb-pdcch-symbols')
 
   const plan = planBudgetClipboardPaste({
-    text: '12\n100.1',
+    text: '2\n100.1',
     startRow,
     startColumn: 1,
     scenarioIds: ['baseline'],
@@ -167,7 +182,7 @@ test('paste follows the currently visible rows when advanced inputs are collapse
   })
 
   assert.deepEqual(plan.updates, [
-    { scenarioId: 'baseline', field: 'nSymbols', value: '12' },
+    { scenarioId: 'baseline', field: 'pdcchSymbols', value: '2' },
     { scenarioId: 'baseline', field: 'pathLossModel', value: '100.1' },
   ])
 })

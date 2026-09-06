@@ -21,14 +21,13 @@
 }
 
 html {
-  min-width: 1120px;
   background: #eef2f5;
 }
 
 body {
-  min-width: 1120px;
   min-height: 100vh;
   margin: 0;
+  overflow-x: hidden;
 }
 
 button,
@@ -1273,5 +1272,260 @@ a {
 
   .report-summary-caption {
     display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .report-layout {
+    display: block;
+  }
+
+  .report-sidebar {
+    padding: 16px 16px 14px;
+  }
+
+  .report-side-title {
+    margin-top: 16px;
+  }
+
+  .report-side-title span {
+    margin-bottom: 8px;
+  }
+
+  .report-side-title strong {
+    font-size: 21px;
+  }
+
+  .report-nav {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    margin-top: 18px;
+  }
+
+  .report-nav-item {
+    justify-content: center;
+    gap: 6px;
+    min-height: 40px;
+    padding: 8px 5px;
+    font-size: 9px;
+    white-space: nowrap;
+    border-left: 0;
+    border-bottom: 2px solid transparent;
+  }
+
+  .report-nav-item--active {
+    border-left-color: transparent;
+    border-bottom-color: #e9b276;
+  }
+
+  .report-sidebar-foot {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  .side-foot-line {
+    flex: 0 0 28px;
+    width: 28px;
+    margin-bottom: 0;
+  }
+
+  .report-content {
+    padding: 32px 14px 72px;
+  }
+
+  .report-header {
+    display: block;
+  }
+
+  .report-header .eyebrow {
+    margin-bottom: 14px;
+  }
+
+  .report-header h1 {
+    font-size: clamp(32px, 10vw, 44px);
+    line-height: 1.05;
+  }
+
+  .report-intro {
+    margin-top: 14px;
+    font-size: 13px;
+    line-height: 1.7;
+  }
+
+  .report-header-meta {
+    display: flex;
+    align-items: baseline;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 5px 10px;
+    min-width: 0;
+    padding-top: 18px;
+    text-align: left;
+  }
+
+  .report-header-meta .meta-label {
+    flex-basis: 100%;
+  }
+
+  .report-header-meta strong {
+    font-size: 14px;
+  }
+
+  .report-summary-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px 0;
+    min-height: 0;
+    margin: 36px 0 24px;
+    padding: 14px 0;
+  }
+
+  .report-summary-label {
+    grid-column: 1 / -1;
+    width: auto;
+  }
+
+  .report-summary-value {
+    width: auto;
+    min-width: 0;
+    padding-left: 14px;
+  }
+
+  .report-summary-value:nth-of-type(2) {
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .report-summary-caption {
+    display: block;
+    grid-column: 1 / -1;
+    margin-left: 0;
+    line-height: 1.6;
+  }
+
+  .report-table-wrap {
+    width: 100%;
+    margin: 0;
+    padding: 20px 12px 18px;
+  }
+
+  .report-table-head {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .report-current {
+    margin-left: auto;
+  }
+
+  .budget-table-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 12px;
+    line-height: 1.5;
+  }
+
+  .budget-table-toolbar > span {
+    margin-right: 0;
+  }
+
+  .budget-table-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    gap: 8px;
+  }
+
+  .budget-table-advanced-toggle,
+  .budget-table-copy {
+    min-height: 40px;
+    padding: 8px 10px;
+  }
+
+  .budget-group-panel {
+    flex-basis: 76px;
+  }
+
+  .budget-matrix-layout > .budget-table {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+  }
+}
+
+@media (max-width: 480px) {
+  .report-sidebar {
+    padding: 14px 12px 12px;
+  }
+
+  .report-side-title {
+    margin-top: 14px;
+  }
+
+  .report-side-title strong {
+    font-size: 20px;
+  }
+
+  .report-nav-item {
+    gap: 4px;
+    padding-right: 2px;
+    padding-left: 2px;
+    font-size: 8px;
+    letter-spacing: 0.02em;
+  }
+
+  .report-sidebar-foot {
+    font-size: 8px;
+  }
+
+  .report-content {
+    padding: 24px 10px 56px;
+  }
+
+  .report-header h1 {
+    font-size: clamp(30px, 10.5vw, 38px);
+  }
+
+  .report-summary-row {
+    gap: 12px 0;
+    margin-top: 28px;
+  }
+
+  .report-summary-value {
+    padding-left: 10px;
+  }
+
+  .report-table-wrap {
+    padding: 16px 8px 14px;
+  }
+
+  .report-table-head {
+    margin-bottom: 14px;
+  }
+
+  .report-current {
+    font-size: 10px;
+  }
+
+  .budget-table-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .budget-group-panel {
+    flex-basis: 64px;
+  }
+
+  .budget-group {
+    padding-right: 6px;
+    padding-left: 6px;
+    font-size: 7px;
   }
 }

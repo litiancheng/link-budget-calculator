@@ -50,6 +50,10 @@ export function createPageScrollGuard(
       }
     },
 
+    getPendingPosition() {
+      return pendingPosition
+    },
+
     reset() {
       pendingPosition = null
       lastCapturedAt = Number.NEGATIVE_INFINITY

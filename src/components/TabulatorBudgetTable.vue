@@ -17,7 +17,7 @@ import {
 } from '../domain/budgetMatrix'
 import type { TbsDiagnostic } from '../domain/transportBlockSize'
 import type { SinrDiagnostic } from '../domain/nrBlerCurve'
-import { createPageScrollGuard } from '../ui/pageScrollGuard'
+import { createPageScrollGuard, type PageScrollPosition } from '../ui/pageScrollGuard'
 
 type BudgetTableRow = {
   id: string
@@ -29,6 +29,8 @@ type BudgetTableRow = {
 const tableElement = ref<HTMLElement | null>(null)
 let table: any = null
 let pageScrollGuardResetTimer: number | null = null
+let editingPageScrollRestoreTimer: number | null = null
+let editingPageScrollPosition: PageScrollPosition | null = null
 
 const scenarioAddField = '__scenario_add__'
 const emit = defineEmits<{
@@ -43,6 +45,44 @@ const tablePageScrollGuard = createPageScrollGuard(
   () => ({ left: window.scrollX, top: window.scrollY }),
   ({ left, top }) => window.scrollTo(left, top),
 )
+
+function clearEditingPageScrollRestoreTimer() {
+  if (editingPageScrollRestoreTimer !== null) {
+    window.clearTimeout(editingPageScrollRestoreTimer)
+    editingPageScrollRestoreTimer = null
+  }
+}
+
+function beginEditingPageScrollGuard() {
+  clearEditingPageScrollRestoreTimer()
+  const capturedPosition = tablePageScrollGuard.getPendingPosition()
+  if (capturedPosition) tablePageScrollGuard.restorePending()
+  editingPageScrollPosition = capturedPosition ?? { left: window.scrollX, top: window.scrollY }
+
+  if (pageScrollGuardResetTimer !== null) {
+    window.clearTimeout(pageScrollGuardResetTimer)
+    pageScrollGuardResetTimer = null
+  }
+}
+
+function scheduleEditingPageScrollRestore() {
+  const position = editingPageScrollPosition
+  if (!position) return
+
+  clearEditingPageScrollRestoreTimer()
+  editingPageScrollRestoreTimer = window.setTimeout(() => {
+    editingPageScrollRestoreTimer = null
+    if (editingPageScrollPosition !== position) return
+
+    const currentPosition = { left: window.scrollX, top: window.scrollY }
+    if (currentPosition.left !== position.left || currentPosition.top !== position.top) {
+      window.scrollTo(position.left, position.top)
+    }
+
+    editingPageScrollPosition = null
+    tablePageScrollGuard.reset()
+  }, 0)
+}
 
 
 const scenarioMatrix = createScenarioMatrix({
@@ -337,6 +377,8 @@ function budgetEditor(
   success: (value: string) => void,
   cancel: () => void,
 ) {
+  beginEditingPageScrollGuard()
+
   const data = cell.getRow().getData() as BudgetTableRow
   const definition = budgetRowForCell(data)
   const isSelect = definition?.editor === 'select'
@@ -388,8 +430,12 @@ function budgetEditor(
   const finish = (commit: boolean) => {
     if (finished) return
     finished = true
-    if (commit) success(editor.value)
-    else cancel()
+    try {
+      if (commit) success(editor.value)
+      else cancel()
+    } finally {
+      scheduleEditingPageScrollRestore()
+    }
   }
 
   const openSelectPicker = (select: HTMLSelectElement) => {
@@ -423,7 +469,7 @@ function budgetEditor(
   }
 
   onRendered(() => {
-    editor.focus()
+    editor.focus({ preventScroll: true })
     if (editor instanceof HTMLInputElement) editor.select()
     if (editor instanceof HTMLSelectElement) openSelectPicker(editor)
   })
@@ -492,6 +538,8 @@ function destroyTable() {
     window.clearTimeout(pageScrollGuardResetTimer)
     pageScrollGuardResetTimer = null
   }
+  clearEditingPageScrollRestoreTimer()
+  editingPageScrollPosition = null
   tablePageScrollGuard.reset()
   tableElement.value?.removeEventListener('mousedown', handleTableCellMouseDown, true)
   window.removeEventListener('scroll', handleTablePageScroll)

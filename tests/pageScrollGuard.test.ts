@@ -65,3 +65,22 @@ test('keeps the first position across a rapid double-click sequence', () => {
 
   assert.deepEqual(restored, [{ left: 0, top: 914 }])
 })
+
+test('keeps the captured position available while an editor is opening', () => {
+  const cellEvent = {} as Event
+  let position: PageScrollPosition = { left: 0, top: 350 }
+  const guard = createPageScrollGuard(
+    () => true,
+    () => position,
+    (nextPosition) => {
+      position = nextPosition
+    },
+  )
+
+  guard.capture(cellEvent)
+  position = { left: 0, top: 636 }
+
+  assert.deepEqual(guard.getPendingPosition(), { left: 0, top: 350 })
+  guard.restorePending()
+  assert.deepEqual(position, { left: 0, top: 350 })
+})

@@ -6,6 +6,12 @@ import {
   type TbsDiagnostic,
   type TransportDirection,
 } from './transportBlockSize.ts'
+import {
+  lookupTargetSinr,
+  type SinrLookupMethod,
+  type SinrDiagnostic,
+  type SinrLookupResult,
+} from './nrBlerCurve.ts'
 
 export const FREE_SPACE_PATH_LOSS_MODEL_ID = 'free-space'
 
@@ -20,6 +26,7 @@ export const DEFAULT_SCENARIO_INPUTS = Object.freeze({
   specialSlotsPer10ms: '0',
   specialDownlinkSymbols: '0',
   pdcchSymbols: '2',
+  targetBlerPercent: '10',
   nDmrsPrb: '12',
   nOhPrb: '0',
   nPrbOutsideBwp: '0',
@@ -95,10 +102,13 @@ export type ScenarioView = {
     coverageDistanceKm: number | null
     transportBlockSizeBits: number | null
     transportRateMbps: number | null
+    targetSinrDb: number | null
+    targetSinrMethod: SinrLookupMethod | null
   }
   diagnostics: readonly ModelDiagnostic[]
   tbDiagnostics: readonly TbsDiagnostic[]
   rateDiagnostics: readonly TbsDiagnostic[]
+  sinrDiagnostics: readonly SinrDiagnostic[]
 }
 
 export type ScenarioMatrixSnapshot = {
@@ -194,6 +204,61 @@ function calculateScenarioTransportRate(inputs: ScenarioInputs) {
     specialSlotsPer10ms: readScenarioNumber(inputs, 'specialSlotsPer10ms'),
     specialDownlinkSymbols: readScenarioNumber(inputs, 'specialDownlinkSymbols'),
     pdcchSymbols: readScenarioNumber(inputs, 'pdcchSymbols'),
+  })
+}
+
+function calculateScenarioTargetSinr(
+  inputs: ScenarioInputs,
+  tbsCalculation: ReturnType<typeof calculateScenarioTransportBlockSize>,
+): SinrLookupResult {
+  const targetBlerPercent = readScenarioNumber(inputs, 'targetBlerPercent')
+  if (!Number.isFinite(targetBlerPercent) || targetBlerPercent <= 0 || targetBlerPercent >= 100) {
+    return {
+      value: null,
+      method: null,
+      diagnostics: [{
+        code: 'INVALID_INPUT',
+        field: 'targetBlerPercent',
+        value: inputs.targetBlerPercent,
+        message: '目标 BLER 必须大于 0% 且小于 100%',
+      }],
+    }
+  }
+
+  if (tbsCalculation.value === null || !tbsCalculation.details) {
+    return {
+      value: null,
+      method: null,
+      diagnostics: [{
+        code: 'CURVE_NOT_FOUND',
+        field: 'mcsIndex',
+        value: inputs.mcsIndex,
+        message: 'TBS 无法计算，无法选择 ns-3 BLER 曲线',
+      }],
+    }
+  }
+
+  const { details } = tbsCalculation
+  if (details.baseGraph === undefined || details.codeBlockSizeBits === undefined || details.codeBlockCount === undefined) {
+    return {
+      value: null,
+      method: null,
+      diagnostics: [{
+        code: 'CURVE_NOT_FOUND',
+        field: 'mcsIndex',
+        value: inputs.mcsIndex,
+        message: 'TBS 缺少 ns-3 曲线所需的码块分段信息',
+      }],
+    }
+  }
+
+  return lookupTargetSinr({
+    mcsTable: inputs.mcsTable.trim() as McsTableId,
+    mcsIndex: readScenarioNumber(inputs, 'mcsIndex'),
+    baseGraph: details.baseGraph,
+    codeBlockSizeBits: details.codeBlockSizeBits,
+    codeBlockCount: details.codeBlockCount,
+    targetBler: targetBlerPercent / 100,
   })
 }
 
@@ -434,6 +499,7 @@ export class ScenarioMatrix {
         })
     const tbsCalculation = calculateScenarioTransportBlockSize(scenario.inputs)
     const rateCalculation = calculateScenarioTransportRate(scenario.inputs)
+    const sinrCalculation = calculateScenarioTargetSinr(scenario.inputs, tbsCalculation)
 
     return {
       id: scenario.id,
@@ -443,10 +509,13 @@ export class ScenarioMatrix {
         coverageDistanceKm: calculation.value,
         transportBlockSizeBits: tbsCalculation.value,
         transportRateMbps: rateCalculation.value,
+        targetSinrDb: sinrCalculation.value,
+        targetSinrMethod: sinrCalculation.method,
       },
       diagnostics: [...calculation.diagnostics],
       tbDiagnostics: [...tbsCalculation.diagnostics],
       rateDiagnostics: [...rateCalculation.diagnostics],
+      sinrDiagnostics: [...sinrCalculation.diagnostics],
     }
   }
 

@@ -60,6 +60,16 @@ export const BUDGET_ROWS: readonly BudgetRowDefinition[] = Object.freeze([
     visibility: 'basic',
   },
   {
+    id: 'tb-target-bler',
+    parameter: '目标 BLER',
+    unit: '%',
+    kind: 'input',
+    field: 'targetBlerPercent',
+    editor: 'text',
+    groupId: 'transport-block',
+    visibility: 'basic',
+  },
+  {
     id: 'tb-downlink-slots',
     parameter: '下行时隙数',
     unit: '每10ms',
@@ -234,6 +244,14 @@ export const BUDGET_ROWS: readonly BudgetRowDefinition[] = Object.freeze([
     editor: 'readonly',
     groupId: 'results',
   },
+  {
+    id: 'target-sinr',
+    parameter: '目标 SINR',
+    unit: 'dB',
+    kind: 'result',
+    editor: 'readonly',
+    groupId: 'results',
+  },
 ])
 
 export const BUDGET_GROUPS: readonly BudgetGroupDefinition[] = Object.freeze([
@@ -245,6 +263,7 @@ export const BUDGET_GROUPS: readonly BudgetGroupDefinition[] = Object.freeze([
       'tb-mcs-index',
       'tb-layers',
       'tb-prb',
+      'tb-target-bler',
       'tb-downlink-slots',
       'tb-uplink-slots',
       'tb-special-slots',
@@ -272,7 +291,7 @@ export const BUDGET_GROUPS: readonly BudgetGroupDefinition[] = Object.freeze([
   {
     id: 'results',
     label: '计算结果',
-    rowIds: ['coverage-distance', 'transport-block-size'],
+    rowIds: ['coverage-distance', 'transport-block-size', 'target-sinr'],
   },
 ])
 

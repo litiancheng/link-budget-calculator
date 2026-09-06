@@ -1,0 +1,25 @@
+{
+  "resources": {
+    "prb_counts": [
+      10,
+      100,
+      200
+    ],
+    "scheduled_symbols": 12,
+    "dmrs_re_per_prb": 24,
+    "oh_re_per_prb": 0,
+    "layers": 1,
+    "harq": "none"
+  },
+  "target_tbler": 0.1,
+  "sources": {
+    "nr_repo": "https://gitlab.com/cttc-lena/nr.git",
+    "nr_commit": "fec689095e7fbaf6d48858846dd5fe8fe18daf9f",
+    "sionna_repo": "https://github.com/NVlabs/sionna.git",
+    "sionna_commit": "f56ce0c2ce01d7c591957f89eb1c8ce02fd6d608"
+  },
+  "curve_method": "official source curves; linear interpolation for threshold only; no Monte Carlo",
+  "notes": "ns-3 curves use the official lower/equal code-block-size lookup rule; Sionna curves linearly interpolate across CBS entries before TB-BLER composition.",
+  "row_count": 8610,
+  "threshold_count": 594
+}

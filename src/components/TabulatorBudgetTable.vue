@@ -16,6 +16,8 @@ import {
   type BudgetRowDefinition,
 } from '../domain/budgetMatrix'
 import type { TbsDiagnostic } from '../domain/transportBlockSize'
+import type { SinrDiagnostic } from '../domain/nrBlerCurve'
+import { createPageScrollGuard } from '../ui/pageScrollGuard'
 
 type BudgetTableRow = {
   id: string
@@ -26,11 +28,21 @@ type BudgetTableRow = {
 
 const tableElement = ref<HTMLElement | null>(null)
 let table: any = null
+let pageScrollGuardResetTimer: number | null = null
 
 const scenarioAddField = '__scenario_add__'
 const emit = defineEmits<{
   (event: 'scenario-count-change', count: number): void
 }>()
+
+const tablePageScrollGuard = createPageScrollGuard(
+  (event) => {
+    const target = event.target instanceof Element ? event.target : null
+    return Boolean(target?.closest('.tabulator-cell'))
+  },
+  () => ({ left: window.scrollX, top: window.scrollY }),
+  ({ left, top }) => window.scrollTo(left, top),
+)
 
 
 const scenarioMatrix = createScenarioMatrix({
@@ -108,6 +120,7 @@ const diagnosticFieldLabels: Record<string, string> = {
   pdcchSymbols: 'PDCCH 占用符号数',
   mcsTable: 'MCS 表',
   nDmrsPrb: '每 PRB DM-RS RE 数',
+  targetBlerPercent: '目标 BLER',
 }
 
 const tbsDiagnosticFieldLabels: Record<string, string> = {
@@ -151,6 +164,14 @@ function tbsDiagnosticMessage(diagnostic: TbsDiagnostic) {
   return '当前 TBS 无法计算'
 }
 
+function sinrDiagnosticMessage(diagnostic: SinrDiagnostic) {
+  if (diagnostic.message) return diagnostic.message
+  if (diagnostic.code === 'INVALID_INPUT') return '目标 BLER 输入无效'
+  if (diagnostic.code === 'UNSUPPORTED_MCS_TABLE') return 'ns-3 SINR 曲线只支持 MCS Table 1 和 Table 2'
+  if (diagnostic.code === 'CURVE_NOT_FOUND') return '找不到匹配的 ns-3 BLER 曲线'
+  return '目标 SINR 无法计算'
+}
+
 function scenarioResultValue(view: ScenarioView, definition: BudgetRowDefinition) {
   if (definition.id === 'transport-block-size') {
     if (view.result.transportBlockSizeBits !== null) {
@@ -168,6 +189,18 @@ function scenarioResultValue(view: ScenarioView, definition: BudgetRowDefinition
 
     const diagnostic = view.rateDiagnostics[0]
     return diagnostic ? tbsDiagnosticMessage(diagnostic) : ''
+  }
+
+  if (definition.id === 'target-sinr') {
+    if (view.result.targetSinrDb !== null) {
+      const value = view.result.targetSinrDb.toFixed(2)
+      return view.result.targetSinrMethod?.startsWith('log10-extrapolation')
+        ? value + '（外推）'
+        : value
+    }
+
+    const diagnostic = view.sinrDiagnostics[0]
+    return diagnostic ? sinrDiagnosticMessage(diagnostic) : ''
   }
 
   if (view.result.coverageDistanceKm !== null) {
@@ -218,6 +251,7 @@ function hasDiagnostic(scenarioId: string, field: string) {
     view?.diagnostics.some((diagnostic) => diagnostic.field === field) ||
     view?.tbDiagnostics.some((diagnostic) => diagnostic.field === field) ||
     view?.rateDiagnostics.some((diagnostic) => diagnostic.field === field) ||
+    view?.sinrDiagnostics.some((diagnostic) => diagnostic.field === field) ||
     false
   )
 }
@@ -225,6 +259,7 @@ function hasDiagnostic(scenarioId: string, field: string) {
 function scenarioResultIsValid(view: ScenarioView, definition: BudgetRowDefinition) {
   if (definition.id === 'transport-block-size') return view.result.transportBlockSizeBits !== null
   if (definition.id === 'transport-rate') return view.result.transportRateMbps !== null
+  if (definition.id === 'target-sinr') return view.result.targetSinrDb !== null
   return view.result.coverageDistanceKm !== null
 }
 
@@ -453,6 +488,13 @@ function buildColumns() {
 }
 
 function destroyTable() {
+  if (pageScrollGuardResetTimer !== null) {
+    window.clearTimeout(pageScrollGuardResetTimer)
+    pageScrollGuardResetTimer = null
+  }
+  tablePageScrollGuard.reset()
+  tableElement.value?.removeEventListener('mousedown', handleTableCellMouseDown, true)
+  window.removeEventListener('scroll', handleTablePageScroll)
   tableElement.value?.removeEventListener('click', handleScenarioTableClick)
   tableElement.value?.removeEventListener('dblclick', handleScenarioTitleDoubleClick)
   tableElement.value?.removeEventListener('copy', handleCopyEvent, true)
@@ -483,6 +525,8 @@ function initTable() {
     },
   })
 
+  tableElement.value.addEventListener('mousedown', handleTableCellMouseDown, true)
+  window.addEventListener('scroll', handleTablePageScroll, { passive: true })
   tableElement.value.addEventListener('click', handleScenarioTableClick)
   tableElement.value.addEventListener('dblclick', handleScenarioTitleDoubleClick)
   tableElement.value.addEventListener('copy', handleCopyEvent, true)
@@ -593,6 +637,12 @@ function handleScenarioTableClick(event: MouseEvent) {
   const target = event.target instanceof Element ? event.target : null
   if (!target) return
 
+  if (target.closest('.tabulator-cell')) {
+    // Tabulator installs its own click listener asynchronously. Restore after
+    // that listener focuses the tableholder, otherwise it will overwrite us.
+    window.setTimeout(() => tablePageScrollGuard.restore(event), 0)
+  }
+
   const deleteButton = target.closest('[data-scenario-delete]') as HTMLElement | null
   if (deleteButton) {
     event.preventDefault()
@@ -612,6 +662,10 @@ function handleScenarioTableClick(event: MouseEvent) {
 
 function handleScenarioTitleDoubleClick(event: MouseEvent) {
   const target = event.target instanceof Element ? event.target : null
+  if (target?.closest('.tabulator-cell')) {
+    window.setTimeout(() => tablePageScrollGuard.restore(event), 0)
+  }
+
   const titleElement = target?.closest('[data-scenario-title]') as HTMLElement | null
   if (!titleElement) return
 
@@ -719,6 +773,21 @@ function pasteIntoTable(text: string) {
   })
 
   syncScenarioViews(scenarioMatrix.updateInputsBatch(updatesByScenario))
+}
+
+function handleTableCellMouseDown(event: MouseEvent) {
+  if (event.button !== 0) return
+
+  tablePageScrollGuard.capture(event)
+  if (pageScrollGuardResetTimer !== null) window.clearTimeout(pageScrollGuardResetTimer)
+  pageScrollGuardResetTimer = window.setTimeout(() => {
+    pageScrollGuardResetTimer = null
+    tablePageScrollGuard.reset()
+  }, 1000)
+}
+
+function handleTablePageScroll() {
+  tablePageScrollGuard.restorePending()
 }
 
 function handleCopyEvent(event: ClipboardEvent) {

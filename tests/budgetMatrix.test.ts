@@ -35,6 +35,16 @@ test('budget rows keep units in the fixed parameter-name column and reserve a re
   assert.ok(rate)
   assert.equal(budgetParameterLabel(rate), '传输速率（Mbps）')
   assert.equal(rate.editor, 'readonly')
+
+  const targetBler = BUDGET_ROWS.find((row) => row.id === 'tb-target-bler')
+  assert.ok(targetBler)
+  assert.equal(targetBler.field, 'targetBlerPercent')
+  assert.equal(budgetParameterLabel(targetBler), '目标 BLER（%）')
+
+  const sinr = BUDGET_ROWS.find((row) => row.id === 'target-sinr')
+  assert.ok(sinr)
+  assert.equal(sinr.editor, 'readonly')
+  assert.equal(budgetParameterLabel(sinr), '目标 SINR（dB）')
 })
 
 test('TBS inputs separate always-visible basics from collapsible advanced rows', () => {
@@ -50,6 +60,7 @@ test('TBS inputs separate always-visible basics from collapsible advanced rows',
     'tb-mcs-index',
     'tb-layers',
     'tb-prb',
+    'tb-target-bler',
     'tb-downlink-slots',
     'tb-uplink-slots',
     'tb-special-slots',

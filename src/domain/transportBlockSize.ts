@@ -112,8 +112,16 @@ export type TbsCalculationDetails = {
   quantizationExponent: number
   algorithmBranch: 'small' | 'large'
   smallTbsTableIndex?: number
+  baseGraph?: 1 | 2
+  codeBlockSizeBits?: number
   codeBlockCount?: number
   resourceElements?: ResourceElementDetails
+}
+
+export type CodeBlockSegmentationDetails = {
+  baseGraph: 1 | 2
+  codeBlockSizeBits: number
+  codeBlockCount: number
 }
 
 export type TransportBlockSizeInputs = ResourceElementInputs & {
@@ -236,6 +244,13 @@ const PDSCH_MCS_TABLE_IDS: readonly McsTableId[] = Object.freeze([
   'pdsch-table-2',
   'pdsch-table-3',
   'pdsch-table-4',
+])
+
+const LDPC_LIFTING_SIZES: readonly number[] = Object.freeze([
+  2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24,
+  26, 28, 30, 32, 36, 40, 44, 48, 52, 56, 60, 64, 72, 80, 88, 96,
+  104, 112, 120, 128, 144, 160, 176, 192, 208, 224, 240, 256, 288,
+  320, 352, 384,
 ])
 
 function failure<TDetails = undefined>(diagnostic: TbsDiagnostic): TbsResult<TDetails> {
@@ -541,6 +556,8 @@ export function calculateTransportBlockSizeFromNRe(
   const determined = determineTbs(nInfo, targetCodeRate)
   if (determined.value === null || !determined.details) return determined
 
+  const segmentation = calculateCodeBlockSegmentation(determined.value, targetCodeRate)
+
   return {
     value: determined.value,
     diagnostics: [],
@@ -552,7 +569,48 @@ export function calculateTransportBlockSizeFromNRe(
       numberOfLayers,
       scalingFactor,
       nRe,
+      ...segmentation,
     },
+  }
+}
+
+/**
+ * Mirrors the LDPC base-graph and code-block segmentation rules used by the
+ * official ns-3 NR EESM error model.  The returned code-block size is the K
+ * value used to select the simulated CB-BLER curve.
+ */
+export function calculateCodeBlockSegmentation(
+  tbsBits: number,
+  targetCodeRate: number,
+): CodeBlockSegmentationDetails {
+  const baseGraph: 1 | 2 =
+    tbsBits <= 292 || targetCodeRate <= 0.25 || (tbsBits <= 3824 && targetCodeRate <= 0.67)
+      ? 2
+      : 1
+  const b = tbsBits + 24
+  const kcb = baseGraph === 1 ? 8448 : 3840
+  const kb = baseGraph === 1
+    ? 22
+    : b >= 640
+      ? 10
+      : b >= 560
+        ? 9
+        : b >= 192
+          ? 8
+          : 6
+  const codeBlockCount = b <= kcb ? 1 : Math.ceil(b / (kcb - 24))
+  const codeBlockInputBits = b + (codeBlockCount === 1 ? 0 : codeBlockCount * 24)
+  const k1 = codeBlockInputBits / codeBlockCount
+  const liftingSize = LDPC_LIFTING_SIZES.find((size) => kb * size >= k1)
+
+  if (liftingSize === undefined) {
+    throw new Error(`No LDPC lifting size supports K1=${k1}`)
+  }
+
+  return {
+    baseGraph,
+    codeBlockSizeBits: liftingSize * (baseGraph === 1 ? 22 : 10),
+    codeBlockCount,
   }
 }
 

@@ -54,6 +54,60 @@ test('default scenario derives downlink symbols and calculates Mbps over 10 ms',
   assert.deepEqual(baseline.rateDiagnostics, [])
 })
 
+test('default scenario derives the target SINR from the official ns-3 curve', () => {
+  const matrix = createScenarioMatrix({
+    scenarios: [{ id: 'baseline', name: '基准链路', inputs: { ...DEFAULT_SCENARIO_INPUTS } }],
+  })
+
+  const baseline = matrix.getScenario('baseline')
+
+  assert.ok(baseline)
+  assert.equal(baseline.inputs.targetBlerPercent, '10')
+  assert.equal(baseline.result.targetSinrMethod, 'interpolation')
+  assert.ok(baseline.result.targetSinrDb !== null)
+  assert.ok(Math.abs(baseline.result.targetSinrDb - 11.0654783166) < 1e-9)
+  assert.deepEqual(baseline.sinrDiagnostics, [])
+})
+
+test('scenario target BLER updates can select log10 extrapolation', () => {
+  const matrix = createScenarioMatrix({
+    scenarios: [{ id: 'baseline', name: '基准链路', inputs: { ...DEFAULT_SCENARIO_INPUTS } }],
+  })
+
+  const updated = matrix.updateInput('baseline', 'targetBlerPercent', '0.0001')
+
+  assert.equal(updated.result.targetSinrMethod, 'log10-extrapolation-low-bler')
+  assert.ok(updated.result.targetSinrDb !== null)
+  assert.deepEqual(updated.sinrDiagnostics, [])
+})
+
+test('invalid target BLER clears only SINR and preserves other results', () => {
+  const matrix = createScenarioMatrix({
+    scenarios: [{ id: 'baseline', name: '基准链路', inputs: { ...DEFAULT_SCENARIO_INPUTS } }],
+  })
+
+  const updated = matrix.updateInput('baseline', 'targetBlerPercent', '100')
+
+  assert.equal(updated.result.targetSinrDb, null)
+  assert.equal(updated.result.coverageDistanceKm !== null, true)
+  assert.equal(updated.result.transportBlockSizeBits, 3496)
+  assert.equal(updated.sinrDiagnostics[0]?.field, 'targetBlerPercent')
+})
+
+test('target SINR is available for the requested Table 1/2 PRB sizes', () => {
+  const matrix = createScenarioMatrix({
+    scenarios: [{ id: 'baseline', name: '基准链路', inputs: { ...DEFAULT_SCENARIO_INPUTS } }],
+  })
+
+  for (const mcsTable of ['pdsch-table-1', 'pdsch-table-2'] as const) {
+    for (const nPrb of ['10', '100', '200']) {
+      const updated = matrix.updateInputs('baseline', { mcsTable, nPrb, targetBlerPercent: '10' })
+      assert.ok(updated.result.targetSinrDb !== null, `${mcsTable} PRB=${nPrb}`)
+      assert.deepEqual(updated.sinrDiagnostics, [])
+    }
+  }
+})
+
 test('scenario rate follows the selected direction and ignores the other slot counts', () => {
   const matrix = createScenarioMatrix({
     scenarios: [{ id: 'baseline', name: '基准链路', inputs: { ...DEFAULT_SCENARIO_INPUTS } }],

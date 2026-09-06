@@ -1,0 +1,35 @@
+#!/bin/sh
+
+# Keep commits local when a push cannot be completed. The commit has already
+# been created, so a failed push must not make the user lose that commit.
+branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+
+if [ -z "$branch" ]; then
+  printf '%s\n' 'post-commit: detached HEAD; skipping automatic push.' >&2
+  exit 0
+fi
+
+upstream="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)"
+
+if [ -n "$upstream" ]; then
+  printf 'post-commit: pushing %s...\n' "$upstream"
+  if git push; then
+    exit 0
+  fi
+
+  printf '%s\n' 'post-commit: automatic push failed; the commit remains local. Retry with git push.' >&2
+  exit 0
+fi
+
+if ! git remote get-url origin >/dev/null 2>&1; then
+  printf '%s\n' 'post-commit: no origin remote; skipping automatic push.' >&2
+  exit 0
+fi
+
+printf 'post-commit: no upstream for %s; pushing to origin and setting upstream...\n' "$branch"
+if git push --set-upstream origin "$branch"; then
+  exit 0
+fi
+
+printf '%s\n' 'post-commit: automatic push failed; the commit remains local. Retry with git push.' >&2
+exit 0
